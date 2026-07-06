@@ -119,9 +119,10 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v6</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v7</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
+  <button id="previewBtn">미리 재생</button>
   <button id="exportVidBtn">영상 내보내기</button>
   <button class="primary" id="exportBtn">PNG 내보내기</button>
 </header>
@@ -202,6 +203,12 @@
         <div class="row"><label>온도</label><input type="range" id="adjTemp" min="-100" max="100" value="0"><span class="dim" id="adjTempVal">0</span></div>
         <div class="row"><label>색조</label><input type="range" id="adjTint" min="-100" max="100" value="0"><span class="dim" id="adjTintVal">0</span></div>
         <div class="row"><label>채도</label><input type="range" id="adjSat" min="0" max="200" value="100"><span class="dim" id="adjSatVal">100</span></div>
+        <div class="row" id="trimRow" style="display:none">
+          <label>구간(초)</label>
+          <input type="number" id="trimStart" min="0" step="0.1" style="width:0" class="grow">
+          <span>~</span>
+          <input type="number" id="trimEnd" min="0" step="0.1" style="width:0" class="grow">
+        </div>
         <div class="row" id="audioRow" style="display:none">
           <label class="toggle grow"><input type="checkbox" id="vidAudio"> 이 영상의 소리 사용 (1개만)</label>
         </div>
@@ -393,9 +400,15 @@ function imgDrawSize(el){ // scale 1 기준 표시 크기
   return { w: cw*el.scale, h: ch*el.scale };
 }
 /* 캔버스 2D 필터 지원 감지 (사파리는 지원이 늦었던 이력이 있어 직접 확인) */
-const FILTER_OK = (()=>{ 
-  try{ const t=document.createElement('canvas').getContext('2d'); t.filter='blur(2px)'; return t.filter==='blur(2px)'; }
-  catch(e){ return false; }
+const FILTER_OK = (()=>{ // '지원한다는 응답'이 아니라 실제 렌더 결과를 픽셀로 검증
+  try{
+    const c=document.createElement('canvas'); c.width=4; c.height=4;
+    const t=c.getContext('2d');
+    t.filter='brightness(50%)';
+    if(t.filter!=='brightness(50%)') return false;
+    t.fillStyle='#ffffff'; t.fillRect(0,0,4,4);
+    return t.getImageData(0,0,1,1).data[0] < 250;
+  }catch(e){ return false; }
 })();
 const blurTmp = document.createElement('canvas');
 const blurCtx = blurTmp.getContext('2d');
@@ -408,7 +421,8 @@ function drawImageEl(ctx, el, s){
   ctx.globalAlpha = el.opacity;
   const cx = el.crop?el.crop.cx:0, cy = el.crop?el.crop.cy:0;
   const cw = el.crop?el.crop.cw:el.w, ch = el.crop?el.crop.ch:el.h;
-  if(FILTER_OK){
+  const useFilter = FILTER_OK && el.type!=='video'; // 영상 프레임에 필터가 적용되지 않는 엔진 대비
+  if(useFilter){
     const parts = [];
     if(a.blur>0) parts.push('blur('+(a.blur*s)+'px)');
     if(a.bright!==100) parts.push('brightness('+a.bright+'%)');
@@ -583,7 +597,7 @@ function renderPageTabs(){
     const b = document.createElement('button');
     b.className = 'small'+(i===cur?' active':'');
     b.textContent = (i+1);
-    b.addEventListener('click', ()=>{ cur=i; selectedId=null; renderAll(); });
+    b.addEventListener('click', ()=>{ stopPreview(); cur=i; selectedId=null; renderAll(); });
     box.appendChild(b);
   });
 }
@@ -623,7 +637,15 @@ function renderProps(){
   $('#textProps').style.display  = el.type==='text' ? 'flex':'none';
   if(el.type!=='text'){
     $('#audioRow').style.display = el.type==='video' ? 'flex':'none';
+    $('#trimRow').style.display = el.type==='video' ? 'flex':'none';
     $('#vidAudio').checked = !!el.useAudio;
+    if(el.type==='video'){
+      const d = el.img.duration||0;
+      if(el.trimEnd==null || el.trimEnd===0) el.trimEnd = d;
+      $('#trimStart').max = d.toFixed(1); $('#trimEnd').max = d.toFixed(1);
+      $('#trimStart').value = (el.trimStart||0).toFixed(1);
+      $('#trimEnd').value = (el.trimEnd||d).toFixed(1);
+    }
     $('#imgScale').value = Math.max(5, Math.min(200, Math.round(el.scale*100)));
     $('#imgOpacity').value = Math.round(el.opacity*100);
     $('#imgBorderColor').value = el.borderColor || '#111111';
@@ -913,6 +935,7 @@ $('#fileVideo').addEventListener('change', async ev=>{
       id:idSeq++, type:'video', img:v, name:f.name,
       w:v.videoWidth, h:v.videoHeight, scale:fit, crop:null,
       borderColor:'#111111', borderW:0, useAudio:false,
+      trimStart:0, trimEnd:(v.duration||0),
       adjust:{blur:0,bright:100,temp:0,tint:0,sat:100},
       x:canvasW*0.1, y:canvasH*0.1, opacity:1
     };
@@ -931,6 +954,62 @@ $('#vidAudio').addEventListener('change', ev=>{
   }else{
     el.useAudio = false;
   }
+});
+$('#trimStart').addEventListener('change', onSel((el,ev)=>{
+  if(el.type!=='video') return;
+  const d = el.img.duration||0;
+  const v = Math.max(0, Math.min(+ev.target.value||0, (el.trimEnd!=null?el.trimEnd:d)-0.2));
+  el.trimStart = v; ev.target.value = v.toFixed(1);
+}));
+$('#trimEnd').addEventListener('change', onSel((el,ev)=>{
+  if(el.type!=='video') return;
+  const d = el.img.duration||0;
+  const v = Math.min(d, Math.max(+ev.target.value||d, (el.trimStart||0)+0.2));
+  el.trimEnd = v; ev.target.value = v.toFixed(1);
+}));
+function trimOf(v){
+  const d = v.img.duration||0;
+  const st = v.trimStart||0;
+  const en = (v.trimEnd!=null && v.trimEnd>st) ? v.trimEnd : d;
+  return {st, en};
+}
+function enforceTrim(vids){
+  vids.forEach(v=>{
+    const t = trimOf(v);
+    if(t.en > t.st && (v.img.currentTime >= t.en || v.img.currentTime < t.st-0.05)){
+      v.img.currentTime = t.st;
+    }
+  });
+}
+/* ---------- 미리 재생 ---------- */
+let previewing = false, prevRaf = 0;
+function stopPreview(){
+  if(!previewing) return;
+  previewing = false;
+  cancelAnimationFrame(prevRaf);
+  page().elements.forEach(e=>{
+    if(e.type==='video'){ e.img.pause(); e.img.muted = true; e.img.currentTime = (e.trimStart||0); }
+  });
+  $('#previewBtn').textContent = '미리 재생';
+  redraw();
+}
+$('#previewBtn').addEventListener('click', ()=>{
+  if(previewing){ stopPreview(); return; }
+  const vids = page().elements.filter(e=>e.type==='video');
+  if(!vids.length){ toast('현재 페이지에 영상이 없습니다.'); return; }
+  previewing = true;
+  $('#previewBtn').textContent = '정지';
+  vids.forEach(v=>{
+    v.img.currentTime = trimOf(v).st;
+    v.img.muted = !v.useAudio;
+    const p = v.img.play(); if(p && p.catch) p.catch(()=>{});
+  });
+  (function loop(){
+    if(!previewing) return;
+    enforceTrim(vids);
+    redraw();
+    prevRaf = requestAnimationFrame(loop);
+  })();
 });
 
 /* ---------- 내보내기 ---------- */
@@ -1006,7 +1085,8 @@ $('#exportVidBtn').addEventListener('click', ()=>{
   c.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;';
   document.body.appendChild(c); // 사파리 안정성 위해 문서에 부착한 상태로 녹화
   const ctx = c.getContext('2d');
-  const dur = Math.min(300, Math.max.apply(null, vids.map(v=>v.img.duration||3)));
+  stopPreview();
+  const dur = Math.min(300, Math.max.apply(null, vids.map(v=>{ const t=trimOf(v); return Math.max(0.5, t.en-t.st); })));
 
   const stream = c.captureStream(30);
   const audioEl = vids.find(v=>v.useAudio);
@@ -1058,20 +1138,15 @@ $('#exportVidBtn').addEventListener('click', ()=>{
     const blob = new Blob(chunks, {type});
     const ext = type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
     const file = new File([blob], 'collage_'+W+'x'+H+'.'+ext, {type});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      navigator.share({files:[file]})
-        .then(()=>toast('공유 시트에서 "비디오 저장"을 누르면 갤러리에 저장됩니다.'))
-        .catch(err=>{ if(err.name!=='AbortError') videoFallback(blob, file.name); });
-    }else{
-      videoFallback(blob, file.name);
-    }
+    showVideoResult(file, blob); // 공유 시트는 새 탭 직후에만 열 수 있어 결과 화면의 버튼에서 실행
   };
   rec.onerror = ()=>{ cancelled = true; cleanup(); toast('녹화 중 오류가 발생했습니다. 배율을 낮춰 다시 시도해 보세요.'); };
 
-  vids.forEach(v=>{ v.img.currentTime = 0; const p = v.img.play(); if(p && p.catch) p.catch(()=>{}); });
+  vids.forEach(v=>{ v.img.currentTime = trimOf(v).st; const p = v.img.play(); if(p && p.catch) p.catch(()=>{}); });
   rec.start(1000);
   const t0 = performance.now();
   function frame(){
+    enforceTrim(vids);
     renderScene(ctx, pg, s);
     const t = (performance.now()-t0)/1000;
     fill.style.width = Math.min(100, t/dur*100)+'%';
@@ -1081,6 +1156,33 @@ $('#exportVidBtn').addEventListener('click', ()=>{
   }
   frame();
 });
+function showVideoResult(file, blob){
+  const url = URL.createObjectURL(blob);
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,11,14,.92);z-index:160;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;';
+  const vd = document.createElement('video');
+  vd.src = url; vd.controls = true; vd.playsInline = true;
+  vd.style.cssText = 'max-width:90%;max-height:60%;box-shadow:0 8px 40px rgba(0,0,0,.6);background:#000;';
+  const tip = document.createElement('p');
+  tip.textContent = '녹화가 끝났습니다. 결과를 확인한 뒤 저장을 누르세요.';
+  tip.style.cssText = 'color:#E9EAEC;font-size:14px;margin:0;text-align:center;';
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:10px;';
+  const save = document.createElement('button'); save.textContent = '갤러리에 저장'; save.className = 'primary';
+  const close = document.createElement('button'); close.textContent = '닫기';
+  save.addEventListener('click', ()=>{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file]})
+        .then(()=>toast('공유 시트에서 "비디오 저장"을 누르면 갤러리에 저장됩니다.'))
+        .catch(err=>{ if(err.name!=='AbortError') videoFallback(blob, file.name); });
+    }else{
+      videoFallback(blob, file.name);
+    }
+  });
+  close.addEventListener('click', ()=>{ vd.pause(); ov.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000); });
+  row.appendChild(save); row.appendChild(close);
+  ov.appendChild(vd); ov.appendChild(tip); ov.appendChild(row);
+  document.body.appendChild(ov);
+}
 function videoFallback(blob, fname){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = fname;
