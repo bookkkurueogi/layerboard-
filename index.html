@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v3</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button class="primary" id="exportBtn">PNG 내보내기</button>
@@ -292,6 +292,50 @@ function textBox(el){ // scale 1 기준 상자 크기
   const extra = el.bgOn ? (el.pad + el.borderW)*2 : 0;
   return { w: maxW + extra, h: lines.length*lh + extra, lh, fs };
 }
+/* 잉크 측정: 보이지 않는 캔버스에 실제로 그려서 픽셀 상하한을 스캔.
+   엔진의 측정 API에 의존하지 않으므로 브라우저별 편차가 없음. */
+const inkCache = new Map();
+const inkCanvas = document.createElement('canvas');
+const inkCtx = inkCanvas.getContext('2d', {willReadFrequently:true});
+function scanInk(line, font, bold){
+  const FS = 100, BASE = 150, H = 300;
+  inkCtx.font = (bold?'700 ':'400 ') + FS + 'px ' + font;
+  const w = Math.min(4000, Math.ceil(inkCtx.measureText(line).width) + 40);
+  if(w <= 40) return null;
+  inkCanvas.width = w; inkCanvas.height = H;
+  inkCtx.font = (bold?'700 ':'400 ') + FS + 'px ' + font; // 캔버스 리사이즈 후 재설정 필요
+  inkCtx.textBaseline = 'alphabetic';
+  inkCtx.fillStyle = '#000';
+  inkCtx.fillText(line, 20, BASE);
+  let data;
+  try{ data = inkCtx.getImageData(0, 0, w, H).data; }
+  catch(e){ return null; }
+  let top = -1, bottom = -1;
+  for(let y=0; y<H && top<0; y++){
+    for(let x=0; x<w; x++){ if(data[(y*w+x)*4+3] > 16){ top = y; break; } }
+  }
+  if(top < 0) return null;
+  for(let y=H-1; y>=0 && bottom<0; y--){
+    for(let x=0; x<w; x++){ if(data[(y*w+x)*4+3] > 16){ bottom = y; break; } }
+  }
+  return { asc:(BASE-top)/FS, desc:(bottom-BASE)/FS };
+}
+function inkMetrics(el){
+  const lines = el.text.split('\n');
+  let asc = 0, desc = 0, found = false;
+  lines.forEach(l=>{
+    if(!l.trim()) return;
+    const key = (el.bold?'B|':'N|') + el.font + '|' + l;
+    let m = inkCache.get(key);
+    if(m === undefined){
+      m = scanInk(l, el.font, el.bold);
+      inkCache.set(key, m);
+    }
+    if(m){ asc = Math.max(asc, m.asc); desc = Math.max(desc, m.desc); found = true; }
+  });
+  if(!found){ asc = 0.72; desc = 0.05; } // 스캔 불가 시 한글 일반값 근사
+  return { asc, desc };
+}
 function drawTextEl(ctx, el, s){
   ctx.font = fontString(el, s);
   ctx.textBaseline = 'alphabetic'; // 측정과 그리기의 원점을 반드시 동일하게 유지
@@ -313,14 +357,10 @@ function drawTextEl(ctx, el, s){
   }
   ctx.fillStyle = el.color;
   const off = el.bgOn ? pad+bw : 0;
-  // 실제 글자가 그려지는 영역(잉크)을 측정해 각 줄 칸의 세로 중앙에 배치
-  let asc = 0, desc = 0;
-  lines.forEach(l=>{
-    const m = ctx.measureText(l);
-    asc  = Math.max(asc,  m.actualBoundingBoxAscent  !== undefined ? m.actualBoundingBoxAscent  : fs*0.8);
-    desc = Math.max(desc, m.actualBoundingBoxDescent !== undefined ? m.actualBoundingBoxDescent : fs*0.2);
-  });
-  ctx.textBaseline = 'alphabetic'; // 위에서 이미 설정했지만 안전을 위해 재확인
+  // 픽셀 스캔으로 잰 실제 잉크 비율을 현재 글자 크기에 곱해 사용
+  const ink = inkMetrics(el);
+  const asc = ink.asc*fs, desc = ink.desc*fs;
+  ctx.textBaseline = 'alphabetic';
   lines.forEach((l,i)=>{
     const slotTop = y + off + i*lh;
     ctx.fillText(l, x+off, slotTop + (lh + asc - desc)/2);
