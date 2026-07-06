@@ -313,8 +313,17 @@ function drawTextEl(ctx, el, s){
   }
   ctx.fillStyle = el.color;
   const off = el.bgOn ? pad+bw : 0;
+  // 실제 글자가 그려지는 영역(잉크)을 측정해 각 줄 칸의 세로 중앙에 배치
+  let asc = 0, desc = 0;
+  lines.forEach(l=>{
+    const m = ctx.measureText(l);
+    asc  = Math.max(asc,  m.actualBoundingBoxAscent  !== undefined ? m.actualBoundingBoxAscent  : fs*0.8);
+    desc = Math.max(desc, m.actualBoundingBoxDescent !== undefined ? m.actualBoundingBoxDescent : fs*0.2);
+  });
+  ctx.textBaseline = 'alphabetic';
   lines.forEach((l,i)=>{
-    ctx.fillText(l, x+off, y+off + i*lh + (lh-fs)/2);
+    const slotTop = y + off + i*lh;
+    ctx.fillText(l, x+off, slotTop + (lh + asc - desc)/2);
   });
 }
 function imgDrawSize(el){ // scale 1 기준 표시 크기
