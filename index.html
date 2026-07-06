@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v13</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v14</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
@@ -1108,7 +1108,10 @@ $('#exportVidBtn').addEventListener('click', ()=>{
   document.body.appendChild(c); // 사파리 안정성 위해 문서에 부착한 상태로 녹화
   const ctx = c.getContext('2d');
   stopPreview();
-  const dur = Math.min(300, Math.max.apply(null, vids.map(v=>{ const t=trimOf(v); return Math.max(0.5, t.en-t.st); })));
+  // 기준 영상: 구간이 가장 긴 영상. 종료는 이 영상의 실제 재생 위치로 판단한다.
+  let master = vids[0], masterT = trimOf(vids[0]);
+  vids.forEach(v=>{ const t=trimOf(v); if(t.en-t.st > masterT.en-masterT.st){ master=v; masterT=t; } });
+  const dur = Math.min(300, Math.max(0.5, masterT.en - masterT.st));
 
   const stream = c.captureStream(30);
   const audioEl = vids.find(v=>v.useAudio);
@@ -1149,7 +1152,7 @@ $('#exportVidBtn').addEventListener('click', ()=>{
   let cancelled = false, raf = 0;
   function cleanup(){
     cancelAnimationFrame(raf);
-    vids.forEach(v=>{ v.img.pause(); v.img.muted = true; });
+    vids.forEach(v=>{ v.img.pause(); v.img.muted = true; v.img.loop = true; });
     ov.remove(); c.remove();
   }
   cancelBtn.addEventListener('click', ()=>{ cancelled = true; try{rec.stop();}catch(e){} });
@@ -1164,19 +1167,34 @@ $('#exportVidBtn').addEventListener('click', ()=>{
   };
   rec.onerror = ()=>{ cancelled = true; cleanup(); toast('녹화 중 오류가 발생했습니다. 배율을 낮춰 다시 시도해 보세요.'); };
 
-  vids.forEach(v=>{ v.img.currentTime = trimOf(v).st; const p = v.img.play(); if(p && p.catch) p.catch(()=>{}); });
-  rec.start(1000);
-  const t0 = performance.now();
-  function frame(){
-    enforceTrim(vids);
-    renderScene(ctx, pg, s);
-    const t = (performance.now()-t0)/1000;
-    fill.style.width = Math.min(100, t/dur*100)+'%';
-    msg.textContent = '영상 내보내는 중 '+Math.min(dur,t).toFixed(1)+' / '+dur.toFixed(1)+'초 ('+W+'×'+H+')';
-    if(t >= dur){ try{rec.stop();}catch(e){} return; }
-    raf = requestAnimationFrame(frame);
-  }
-  frame();
+  master.img.loop = false; // 기준 영상은 끝을 감지해야 하므로 반복 금지
+  const others = vids.filter(v=>v!==master);
+  // 모든 영상이 시작 지점으로 이동 완료된 뒤에 녹화를 시작 (준비 지연으로 인한 끝 잘림 방지)
+  Promise.all(vids.map(v=>new Promise(res=>{
+    const el = v.img;
+    const done = ()=>{ el.removeEventListener('seeked', done); res(); };
+    el.addEventListener('seeked', done);
+    el.currentTime = trimOf(v).st;
+    setTimeout(done, 700); // seeked가 안 오는 경우 대비
+  }))).then(()=>{
+    vids.forEach(v=>{ const p = v.img.play(); if(p && p.catch) p.catch(()=>{}); });
+    rec.start(1000);
+    const t0 = performance.now();
+    function frame(){
+      enforceTrim(others); // 기준 영상은 반복시키지 않는다
+      renderScene(ctx, pg, s);
+      const prog = Math.min(dur, Math.max(0, master.img.currentTime - masterT.st));
+      const wall = (performance.now()-t0)/1000;
+      fill.style.width = Math.min(100, prog/dur*100)+'%';
+      msg.textContent = '영상 내보내는 중 '+prog.toFixed(1)+' / '+dur.toFixed(1)+'초 ('+W+'×'+H+')';
+      // 종료: 기준 영상이 실제로 구간 끝에 도달했을 때 (벽시계는 예외 상황 대비 안전 시한)
+      if(master.img.ended || master.img.currentTime >= masterT.en - 0.03 || wall >= dur + 5){
+        try{rec.stop();}catch(e){} return;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    frame();
+  });
 });
 function showVideoResult(file, blob){
   const url = URL.createObjectURL(blob);
