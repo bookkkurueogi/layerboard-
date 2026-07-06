@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v12</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v13</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
@@ -432,7 +432,7 @@ function drawImageEl(ctx, el, s){
     const cap = el.type==='video' ? 1440 : 2560; // 영상은 매 프레임 처리라 성능 고려
     const g = Math.min(1, cap/Math.max(dw, dh));
     const gw = Math.max(2, Math.round(dw*g)), gh = Math.max(2, Math.round(dh*g));
-    const radius = Math.max(1, a.blur/100 * 0.045 * Math.max(gw, gh));
+    const radius = Math.max(1, a.blur/100 * 0.025 * Math.max(gw, gh)); // 최대 흐림 반경: 긴 변의 2.5%
     if(FILTER_OK){
       blurTmp.width = gw; blurTmp.height = gh;
       smoothOn(blurCtx);
