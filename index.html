@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>레이어보드 — 이미지 콜라주 편집기</title>
+<style>
+  :root{
+    --bg:#17191E; --panel:#1F2228; --surface:#2A2E36; --line:#3A3F49;
+    --text:#E9EAEC; --muted:#9AA0AB; --accent:#E8B33C; --accent-ink:#1A1608;
+    --danger:#E0604F;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%; overflow:hidden;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",sans-serif;
+    font-size:14px; display:flex; flex-direction:column;
+  }
+  header{
+    display:flex; align-items:center; gap:12px;
+    padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel);
+    flex:0 0 auto;
+  }
+  header h1{font-size:15px; font-weight:700; margin:0; letter-spacing:-0.01em;}
+  header h1 span{color:var(--accent);}
+  header .spacer{flex:1;}
+  button{
+    font:inherit; color:var(--text); background:var(--surface);
+    border:1px solid var(--line); border-radius:8px;
+    padding:9px 14px; cursor:pointer; min-height:40px;
+  }
+  button:active{transform:translateY(1px);}
+  button.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700;}
+  button.danger{color:var(--danger); border-color:#5a3530;}
+  button.small{padding:6px 10px; min-height:34px; font-size:13px;}
+  button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  main{flex:1; display:flex; min-height:0;}
+  /* ---- stage ---- */
+  #stageWrap{
+    flex:1; min-width:0; display:flex; align-items:center; justify-content:center;
+    padding:20px; overflow:hidden; position:relative;
+  }
+  #stage{
+    position:relative; touch-action:none; user-select:none; -webkit-user-select:none;
+    background:
+      linear-gradient(45deg,#20232A 25%,transparent 25%,transparent 75%,#20232A 75%),
+      linear-gradient(45deg,#20232A 25%,transparent 25%,transparent 75%,#20232A 75%),
+      #1B1E24;
+    background-size:24px 24px; background-position:0 0,12px 12px;
+    box-shadow:0 8px 40px rgba(0,0,0,.5), 0 0 0 1px var(--line);
+    overflow:hidden; flex:0 0 auto;
+  }
+  #stageBg{position:absolute; inset:0;}
+  #stageBg img{width:100%; height:100%; object-fit:cover; display:block; pointer-events:none;}
+  .el{position:absolute; transform-origin:top left; cursor:grab;}
+  .el img{display:block; width:100%; height:100%; pointer-events:none;}
+  .el.text-el{white-space:pre-wrap; word-break:break-word;}
+  .el.selected{outline:1.5px dashed var(--accent); outline-offset:2px;}
+  .handle{
+    position:absolute; width:26px; height:26px; right:-14px; bottom:-14px;
+    background:var(--accent); border:2px solid var(--accent-ink); border-radius:50%;
+    cursor:nwse-resize; touch-action:none; display:none;
+  }
+  .el.selected .handle{display:block;}
+
+  /* ---- panel ---- */
+  #panel{
+    flex:0 0 300px; background:var(--panel); border-left:1px solid var(--line);
+    overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px; display:flex; flex-direction:column; gap:16px;
+  }
+  section{display:flex; flex-direction:column; gap:9px;}
+  section h2{
+    font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--muted);
+    text-transform:uppercase; margin:0; border-bottom:1px solid var(--line); padding-bottom:6px;
+  }
+  .row{display:flex; align-items:center; gap:8px;}
+  .row label{flex:0 0 84px; color:var(--muted); font-size:13px;}
+  .row .grow{flex:1; min-width:0;}
+  input[type=text],input[type=number],select,textarea{
+    font:inherit; color:var(--text); background:var(--surface);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%;
+    min-height:40px;
+  }
+  textarea{resize:vertical; min-height:64px;}
+  input[type=color]{
+    width:44px; height:40px; padding:2px; border:1px solid var(--line);
+    border-radius:8px; background:var(--surface); flex:0 0 auto;
+  }
+  input[type=range]{width:100%; accent-color:var(--accent);}
+  input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .btnrow{display:flex; gap:8px; flex-wrap:wrap;}
+  .btnrow button{flex:1;}
+  .hint{color:var(--muted); font-size:12px; line-height:1.5; margin:0;}
+  .toggle{display:flex; align-items:center; gap:8px; cursor:pointer;}
+  .toggle input{width:20px; height:20px; accent-color:var(--accent);}
+  #layerList{display:flex; flex-direction:column; gap:6px;}
+  .layer-item{
+    display:flex; align-items:center; gap:8px; padding:8px 10px;
+    background:var(--surface); border:1px solid var(--line); border-radius:8px; cursor:pointer;
+  }
+  .layer-item.active{border-color:var(--accent);}
+  .layer-item .name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px;}
+  .layer-item .tag{font-size:11px; color:var(--muted); font-family:ui-monospace,monospace;}
+  #empty{color:var(--muted); font-size:13px;}
+  .dim{font-family:ui-monospace,monospace; font-size:12px; color:var(--muted);}
+  #toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:10px 16px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:50;
+  }
+  #toast.show{opacity:1;}
+  @media (max-width:820px){
+    main{flex-direction:column;}
+    #panel{flex:0 0 46%; border-left:none; border-top:1px solid var(--line);}
+    #stageWrap{padding:12px;}
+  }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
+</style>
+</head>
+<body>
+<header>
+  <h1>레이어<span>보드</span></h1>
+  <span class="dim" id="canvasDim"></span>
+  <div class="spacer"></div>
+  <button class="primary" id="exportBtn">PNG 내보내기</button>
+</header>
+
+<main>
+  <div id="stageWrap"><div id="stage"><div id="stageBg"></div></div></div>
+
+  <div id="panel">
+    <section>
+      <h2>추가</h2>
+      <div class="btnrow">
+        <button id="addImageBtn">사진 추가</button>
+        <button id="addTextBtn">텍스트 추가</button>
+      </div>
+      <div class="btnrow">
+        <button id="addFontBtn">글꼴 파일 업로드 (.ttf / .otf)</button>
+      </div>
+      <p class="hint">업로드한 글꼴은 이 페이지를 열어둔 동안만 유지됩니다. 새로고침하면 다시 업로드해야 해요.</p>
+    </section>
+
+    <section>
+      <h2>캔버스</h2>
+      <div class="row"><label>크기</label>
+        <select id="sizePreset" class="grow">
+          <option value="1080x1080">정사각 1080×1080</option>
+          <option value="1080x1350">세로 4:5 1080×1350</option>
+          <option value="1080x1920">세로 9:16 1080×1920</option>
+          <option value="1920x1080">가로 16:9 1920×1080</option>
+          <option value="custom">직접 입력</option>
+        </select>
+      </div>
+      <div class="row" id="customSizeRow" style="display:none">
+        <label>픽셀</label>
+        <input type="number" id="customW" value="1080" min="100" max="8000" style="width:0" class="grow">
+        <span>×</span>
+        <input type="number" id="customH" value="1080" min="100" max="8000" style="width:0" class="grow">
+        <button class="small" id="applyCustom">적용</button>
+      </div>
+      <div class="row"><label>배경 색</label>
+        <input type="color" id="bgColor" value="#ffffff">
+        <button class="small grow" id="bgImageBtn">배경 사진 선택</button>
+        <button class="small" id="bgImageClear">지움</button>
+      </div>
+      <div class="row"><label>내보내기 배율</label>
+        <select id="exportScale" class="grow">
+          <option value="1">1× (기본 크기)</option>
+          <option value="2" selected>2× (고해상도)</option>
+          <option value="3">3×</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="propsSection" style="display:none">
+      <h2>선택한 요소</h2>
+      <div id="imageProps" style="display:none; flex-direction:column; gap:9px;">
+        <div class="row"><label>크기</label><input type="range" id="imgScale" min="5" max="200" value="100"></div>
+        <div class="row"><label>불투명도</label><input type="range" id="imgOpacity" min="10" max="100" value="100"></div>
+      </div>
+      <div id="textProps" style="display:none; flex-direction:column; gap:9px;">
+        <textarea id="tContent" placeholder="텍스트 내용"></textarea>
+        <div class="row"><label>글꼴</label><select id="tFont" class="grow"></select></div>
+        <div class="row"><label>크기</label><input type="range" id="tSize" min="10" max="240" value="48"><span class="dim" id="tSizeVal">48</span></div>
+        <div class="row"><label>글자 색</label><input type="color" id="tColor" value="#111111">
+          <label class="toggle grow"><input type="checkbox" id="tBold" checked> 굵게</label>
+        </div>
+        <label class="toggle"><input type="checkbox" id="tBgOn"> 텍스트 배경(직사각형)</label>
+        <div id="tBgProps" style="display:none; flex-direction:column; gap:9px;">
+          <div class="row"><label>배경 색</label><input type="color" id="tBgColor" value="#ffffff"></div>
+          <div class="row"><label>테두리 색</label><input type="color" id="tBorderColor" value="#111111"></div>
+          <div class="row"><label>테두리 두께</label><input type="range" id="tBorderW" min="0" max="20" value="2"><span class="dim" id="tBorderWVal">2</span></div>
+          <div class="row"><label>안쪽 여백</label><input type="range" id="tPad" min="0" max="80" value="16"><span class="dim" id="tPadVal">16</span></div>
+        </div>
+      </div>
+      <div class="btnrow">
+        <button class="small" id="layerUp">한 칸 위로</button>
+        <button class="small" id="layerDown">한 칸 아래로</button>
+      </div>
+      <div class="btnrow">
+        <button class="small" id="dupEl">복제</button>
+        <button class="small danger" id="delEl">삭제</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>레이어 (위쪽이 앞)</h2>
+      <div id="layerList"></div>
+      <p id="empty" class="hint">아직 요소가 없습니다. 사진이나 텍스트를 추가해 보세요.</p>
+    </section>
+  </div>
+</main>
+
+<input type="file" id="fileImage" accept="image/*" multiple hidden>
+<input type="file" id="fileBg" accept="image/*" hidden>
+<input type="file" id="fileFont" accept=".ttf,.otf,.woff,.woff2" hidden>
+<div id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+/* ---------- state ---------- */
+let canvasW = 1080, canvasH = 1080;
+let bg = { color:'#ffffff', image:null };   // image: HTMLImageElement
+let elements = [];   // painted bottom -> top
+let selectedId = null;
+let idSeq = 1;
+let viewScale = 1;
+const uploadedFonts = [];
+const SYSTEM_FONTS = [
+  ['-apple-system, "Apple SD Gothic Neo", sans-serif','기본 고딕(시스템)'],
+  ['"Apple SD Gothic Neo", sans-serif','애플 SD 고딕'],
+  ['serif','명조(시스템 세리프)'],
+  ['ui-monospace, monospace','고정폭']
+];
+
+const $ = s => document.querySelector(s);
+const stage = $('#stage'), stageWrap = $('#stageWrap'), stageBg = $('#stageBg');
+
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+/* ---------- layout ---------- */
+function fitStage(){
+  const pad = 24;
+  const availW = stageWrap.clientWidth - pad, availH = stageWrap.clientHeight - pad;
+  viewScale = Math.min(availW / canvasW, availH / canvasH, 1);
+  if(viewScale <= 0 || !isFinite(viewScale)) viewScale = 0.1;
+  stage.style.width  = (canvasW * viewScale) + 'px';
+  stage.style.height = (canvasH * viewScale) + 'px';
+  $('#canvasDim').textContent = canvasW + '×' + canvasH;
+  renderAll();
+}
+window.addEventListener('resize', fitStage);
+
+/* ---------- rendering (editing view) ---------- */
+function renderBg(){
+  stageBg.innerHTML = '';
+  stageBg.style.background = bg.color;
+  if(bg.image){
+    const im = document.createElement('img');
+    im.src = bg.image.src;
+    stageBg.appendChild(im);
+  }
+}
+function textFontCss(el){
+  return (el.bold ? '700 ' : '400 ') + (el.fontSize*viewScale) + 'px ' + el.font;
+}
+function renderEl(el){
+  let node = stage.querySelector('[data-id="'+el.id+'"]');
+  if(!node){
+    node = document.createElement('div');
+    node.dataset.id = el.id;
+    node.className = 'el' + (el.type==='text' ? ' text-el' : '');
+    if(el.type==='image'){
+      const im = document.createElement('img'); im.src = el.img.src; node.appendChild(im);
+    }
+    const h = document.createElement('div'); h.className='handle'; node.appendChild(h);
+    stage.appendChild(node);
+    attachPointer(node, el.id);
+  }
+  node.style.left = (el.x*viewScale)+'px';
+  node.style.top  = (el.y*viewScale)+'px';
+  node.classList.toggle('selected', el.id===selectedId);
+  if(el.type==='image'){
+    node.style.width  = (el.w*el.scale*viewScale)+'px';
+    node.style.height = (el.h*el.scale*viewScale)+'px';
+    node.style.opacity = el.opacity;
+  }else{
+    node.style.font = textFontCss(el);
+    node.style.lineHeight = '1.3';
+    node.style.color = el.color;
+    // keep text node's first child text updated (text before handle div)
+    if(node.firstChild && node.firstChild.nodeType===3) node.firstChild.nodeValue = el.text;
+    else node.insertBefore(document.createTextNode(el.text), node.firstChild);
+    if(el.bgOn){
+      node.style.background = el.bgColor;
+      node.style.border = (el.borderW*viewScale)+'px solid '+el.borderColor;
+      node.style.padding = (el.pad*viewScale)+'px';
+      node.style.borderRadius = '0';
+    }else{
+      node.style.background = 'none'; node.style.border = 'none'; node.style.padding = '0';
+    }
+  }
+}
+function renderAll(){
+  renderBg();
+  // remove stale nodes
+  stage.querySelectorAll('.el').forEach(n=>{
+    if(!elements.find(e=>String(e.id)===n.dataset.id)) n.remove();
+  });
+  elements.forEach((el,i)=>{ renderEl(el); const n=stage.querySelector('[data-id="'+el.id+'"]'); n.style.zIndex = i+1; });
+  renderLayerList(); renderProps();
+}
+
+/* ---------- layers panel ---------- */
+function renderLayerList(){
+  const list = $('#layerList'); list.innerHTML='';
+  $('#empty').style.display = elements.length ? 'none':'block';
+  [...elements].reverse().forEach(el=>{
+    const item = document.createElement('div');
+    item.className='layer-item'+(el.id===selectedId?' active':'');
+    const tag = document.createElement('span'); tag.className='tag';
+    tag.textContent = el.type==='image'?'IMG':'TXT';
+    const name = document.createElement('span'); name.className='name';
+    name.textContent = el.type==='image' ? (el.name||'사진') : (el.text.split('\n')[0]||'텍스트');
+    item.appendChild(tag); item.appendChild(name);
+    item.addEventListener('click', ()=>{ selectedId = el.id; renderAll(); });
+    list.appendChild(item);
+  });
+}
+
+/* ---------- properties panel ---------- */
+function sel(){ return elements.find(e=>e.id===selectedId) || null; }
+function renderProps(){
+  const el = sel();
+  $('#propsSection').style.display = el ? 'flex':'none';
+  if(!el) return;
+  $('#imageProps').style.display = el.type==='image' ? 'flex':'none';
+  $('#textProps').style.display  = el.type==='text' ? 'flex':'none';
+  if(el.type==='image'){
+    $('#imgScale').value = Math.round(el.scale*100);
+    $('#imgOpacity').value = Math.round(el.opacity*100);
+  }else{
+    $('#tContent').value = el.text;
+    $('#tSize').value = el.fontSize; $('#tSizeVal').textContent = el.fontSize;
+    $('#tColor').value = el.color; $('#tBold').checked = el.bold;
+    rebuildFontSelect(el.font);
+    $('#tBgOn').checked = el.bgOn;
+    $('#tBgProps').style.display = el.bgOn ? 'flex':'none';
+    $('#tBgColor').value = el.bgColor; $('#tBorderColor').value = el.borderColor;
+    $('#tBorderW').value = el.borderW; $('#tBorderWVal').textContent = el.borderW;
+    $('#tPad').value = el.pad; $('#tPadVal').textContent = el.pad;
+  }
+}
+function rebuildFontSelect(current){
+  const s = $('#tFont'); s.innerHTML='';
+  SYSTEM_FONTS.forEach(([v,label])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=label; s.appendChild(o);
+  });
+  uploadedFonts.forEach(f=>{
+    const o=document.createElement('option'); o.value='"'+f+'"'; o.textContent=f+' (업로드)'; s.appendChild(o);
+  });
+  s.value = current;
+  if(s.value !== current){ const o=document.createElement('option'); o.value=current; o.textContent=current; s.appendChild(o); s.value=current; }
+}
+
+/* ---------- pointer: drag & resize ---------- */
+function attachPointer(node, id){
+  let mode=null, startX=0, startY=0, orig=null;
+  node.addEventListener('pointerdown', ev=>{
+    const el = elements.find(e=>e.id===id); if(!el) return;
+    selectedId = id; renderAll();
+    mode = ev.target.classList.contains('handle') ? 'resize':'move';
+    startX = ev.clientX; startY = ev.clientY;
+    orig = JSON.parse(JSON.stringify({x:el.x,y:el.y,scale:el.scale,fontSize:el.fontSize,w:el.w}));
+    node.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+  node.addEventListener('pointermove', ev=>{
+    if(!mode) return;
+    const el = elements.find(e=>e.id===id); if(!el) return;
+    const dx = (ev.clientX-startX)/viewScale, dy = (ev.clientY-startY)/viewScale;
+    if(mode==='move'){ el.x = orig.x+dx; el.y = orig.y+dy; }
+    else{
+      if(el.type==='image'){
+        const newW = Math.max(30, orig.w*orig.scale + dx);
+        el.scale = newW/el.w;
+      }else{
+        el.fontSize = Math.max(10, Math.min(400, Math.round(orig.fontSize + dy*0.4)));
+      }
+    }
+    renderEl(el);
+    if(mode==='resize') renderProps();
+  });
+  const end = ()=>{ mode=null; };
+  node.addEventListener('pointerup', end);
+  node.addEventListener('pointercancel', end);
+}
+stage.addEventListener('pointerdown', ev=>{
+  if(ev.target===stage || ev.target===stageBg || ev.target.parentNode===stageBg){
+    selectedId=null; renderAll();
+  }
+});
+
+/* ---------- add elements ---------- */
+function loadImageFile(file){
+  return new Promise((res,rej)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>rej(new Error('파일을 읽지 못했습니다: '+file.name));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>res(img);
+      img.onerror = ()=>rej(new Error('이 형식을 표시할 수 없습니다: '+file.name+' ('+(file.type||'형식 불명')+'). 사진 앱에서 JPEG로 복제하거나 스크린샷을 사용해 보세요.'));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+$('#addImageBtn').addEventListener('click', ()=> $('#fileImage').click());
+$('#fileImage').addEventListener('change', async ev=>{
+  for(const f of ev.target.files){
+    try{
+      const img = await loadImageFile(f);
+      const fit = Math.min(canvasW*0.6/img.naturalWidth, canvasH*0.6/img.naturalHeight, 1);
+      elements.push({
+        id:idSeq++, type:'image', img, name:f.name,
+        w:img.naturalWidth, h:img.naturalHeight, scale:fit,
+        x:canvasW*0.1 + elements.length*20, y:canvasH*0.1 + elements.length*20, opacity:1
+      });
+      selectedId = elements[elements.length-1].id;
+    }catch(e){ toast(e.message); }
+  }
+  ev.target.value=''; renderAll();
+});
+$('#addTextBtn').addEventListener('click', ()=>{
+  elements.push({
+    id:idSeq++, type:'text', text:'텍스트를 입력하세요',
+    font:SYSTEM_FONTS[0][0], fontSize:64, color:'#111111', bold:true,
+    bgOn:false, bgColor:'#ffffff', borderColor:'#111111', borderW:2, pad:16,
+    x:canvasW*0.12, y:canvasH*0.12
+  });
+  selectedId = elements[elements.length-1].id;
+  renderAll();
+});
+
+/* ---------- fonts ---------- */
+$('#addFontBtn').addEventListener('click', ()=> $('#fileFont').click());
+$('#fileFont').addEventListener('change', async ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const name = f.name.replace(/\.(ttf|otf|woff2?|TTF|OTF)$/,'');
+  try{
+    const buf = await f.arrayBuffer();
+    const face = new FontFace(name, buf);
+    await face.load();
+    document.fonts.add(face);
+    uploadedFonts.push(name);
+    const el = sel();
+    if(el && el.type==='text'){ el.font = '"'+name+'"'; }
+    toast('글꼴 "'+name+'" 을(를) 불러왔습니다.');
+    renderAll();
+  }catch(e){ toast('글꼴을 불러오지 못했습니다. 파일 형식을 확인해 주세요.'); }
+  ev.target.value='';
+});
+
+/* ---------- canvas settings ---------- */
+$('#sizePreset').addEventListener('change', ev=>{
+  const v = ev.target.value;
+  $('#customSizeRow').style.display = v==='custom' ? 'flex':'none';
+  if(v!=='custom'){
+    const [w,h] = v.split('x').map(Number);
+    canvasW=w; canvasH=h; fitStage();
+  }
+});
+$('#applyCustom').addEventListener('click', ()=>{
+  const w = +$('#customW').value, h = +$('#customH').value;
+  if(w>=100 && h>=100 && w<=8000 && h<=8000){ canvasW=w; canvasH=h; fitStage(); }
+  else toast('100~8000 픽셀 범위로 입력해 주세요.');
+});
+$('#bgColor').addEventListener('input', ev=>{ bg.color=ev.target.value; renderBg(); });
+$('#bgImageBtn').addEventListener('click', ()=> $('#fileBg').click());
+$('#fileBg').addEventListener('change', async ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  try{ bg.image = await loadImageFile(f); renderBg(); }
+  catch(e){ toast(e.message); }
+  ev.target.value='';
+});
+$('#bgImageClear').addEventListener('click', ()=>{ bg.image=null; renderBg(); });
+
+/* ---------- element property inputs ---------- */
+function onSel(fn){ return ev=>{ const el=sel(); if(!el) return; fn(el,ev); renderEl(el); renderLayerList(); }; }
+$('#imgScale').addEventListener('input', onSel((el,ev)=>{ el.scale=ev.target.value/100; }));
+$('#imgOpacity').addEventListener('input', onSel((el,ev)=>{ el.opacity=ev.target.value/100; }));
+$('#tContent').addEventListener('input', onSel((el,ev)=>{ el.text=ev.target.value; }));
+$('#tFont').addEventListener('change', onSel((el,ev)=>{ el.font=ev.target.value; }));
+$('#tSize').addEventListener('input', onSel((el,ev)=>{ el.fontSize=+ev.target.value; $('#tSizeVal').textContent=el.fontSize; }));
+$('#tColor').addEventListener('input', onSel((el,ev)=>{ el.color=ev.target.value; }));
+$('#tBold').addEventListener('change', onSel((el,ev)=>{ el.bold=ev.target.checked; }));
+$('#tBgOn').addEventListener('change', onSel((el,ev)=>{ el.bgOn=ev.target.checked; $('#tBgProps').style.display=el.bgOn?'flex':'none'; }));
+$('#tBgColor').addEventListener('input', onSel((el,ev)=>{ el.bgColor=ev.target.value; }));
+$('#tBorderColor').addEventListener('input', onSel((el,ev)=>{ el.borderColor=ev.target.value; }));
+$('#tBorderW').addEventListener('input', onSel((el,ev)=>{ el.borderW=+ev.target.value; $('#tBorderWVal').textContent=el.borderW; }));
+$('#tPad').addEventListener('input', onSel((el,ev)=>{ el.pad=+ev.target.value; $('#tPadVal').textContent=el.pad; }));
+
+/* ---------- layer ordering / delete / duplicate ---------- */
+$('#layerUp').addEventListener('click', ()=>{
+  const i = elements.findIndex(e=>e.id===selectedId);
+  if(i>=0 && i<elements.length-1){ [elements[i],elements[i+1]]=[elements[i+1],elements[i]]; renderAll(); }
+});
+$('#layerDown').addEventListener('click', ()=>{
+  const i = elements.findIndex(e=>e.id===selectedId);
+  if(i>0){ [elements[i],elements[i-1]]=[elements[i-1],elements[i]]; renderAll(); }
+});
+$('#delEl').addEventListener('click', ()=>{
+  elements = elements.filter(e=>e.id!==selectedId); selectedId=null; renderAll();
+});
+$('#dupEl').addEventListener('click', ()=>{
+  const el = sel(); if(!el) return;
+  const copy = Object.assign({}, el, {id:idSeq++, x:el.x+40, y:el.y+40});
+  elements.push(copy); selectedId=copy.id; renderAll();
+});
+
+/* ---------- export ---------- */
+function drawTextEl(ctx, el, s){
+  const fs = el.fontSize*s, lh = fs*1.3, pad = el.pad*s, bw = el.borderW*s;
+  ctx.font = (el.bold?'700 ':'400 ') + fs + 'px ' + el.font;
+  ctx.textBaseline = 'alphabetic';
+  const lines = el.text.split('\n');
+  let maxW = 0;
+  lines.forEach(l=>{ maxW = Math.max(maxW, ctx.measureText(l).width); });
+  const boxW = maxW + (el.bgOn ? pad*2 + bw*2 : 0);
+  const boxH = lines.length*lh + (el.bgOn ? pad*2 + bw*2 : 0);
+  const x = el.x*s, y = el.y*s;
+  if(el.bgOn){
+    ctx.fillStyle = el.bgColor;
+    ctx.fillRect(x, y, boxW, boxH);
+    if(bw>0){
+      ctx.strokeStyle = el.borderColor; ctx.lineWidth = bw;
+      ctx.strokeRect(x+bw/2, y+bw/2, boxW-bw, boxH-bw);
+    }
+  }
+  ctx.fillStyle = el.color;
+  const tx = x + (el.bgOn ? pad + bw : 0);
+  let ty = y + (el.bgOn ? pad + bw : 0);
+  lines.forEach(l=>{
+    ctx.fillText(l, tx, ty + fs*0.88);   // approximate CSS baseline within line-height 1.3
+    ty += lh;
+  });
+}
+$('#exportBtn').addEventListener('click', ()=>{
+  try{
+    const s = +$('#exportScale').value;
+    const c = document.createElement('canvas');
+    c.width = canvasW*s; c.height = canvasH*s;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = bg.color; ctx.fillRect(0,0,c.width,c.height);
+    if(bg.image){
+      const iw=bg.image.naturalWidth, ih=bg.image.naturalHeight;
+      const cover = Math.max(c.width/iw, c.height/ih);
+      const dw=iw*cover, dh=ih*cover;
+      ctx.drawImage(bg.image, (c.width-dw)/2, (c.height-dh)/2, dw, dh);
+    }
+    elements.forEach(el=>{
+      if(el.type==='image'){
+        ctx.globalAlpha = el.opacity;
+        ctx.drawImage(el.img, el.x*s, el.y*s, el.w*el.scale*s, el.h*el.scale*s);
+        ctx.globalAlpha = 1;
+      }else{
+        drawTextEl(ctx, el, s);
+      }
+    });
+    // 버튼 탭 직후의 사용자 제스처를 유지하기 위해 전 과정을 동기로 처리
+    const dataURL = c.toDataURL('image/png');
+    const bin = atob(dataURL.split(',')[1]);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    const fname = 'collage_' + canvasW*s + 'x' + canvasH*s + '.png';
+    const file = new File([bytes], fname, {type:'image/png'});
+
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file]})
+        .then(()=>toast('공유 시트에서 "이미지 저장"을 누르면 갤러리에 저장됩니다.'))
+        .catch(err=>{ if(err.name!=='AbortError') fallbackExport(dataURL, fname); });
+    }else{
+      fallbackExport(dataURL, fname);
+    }
+  }catch(e){ toast('내보내기 중 오류: '+e.message); }
+});
+function fallbackExport(url, fname){
+  const a = document.createElement('a');
+  a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;';
+  const im = document.createElement('img');
+  im.src = url;
+  im.style.cssText = 'max-width:90%;max-height:75%;box-shadow:0 8px 40px rgba(0,0,0,.6);';
+  const tip = document.createElement('p');
+  tip.textContent = '이 환경에서는 공유 시트를 열 수 없습니다. 이미지를 길게 눌러 저장하거나, 사파리에서 열어 다시 시도하세요.';
+  tip.style.cssText = 'color:#E9EAEC;font-size:14px;margin:0;text-align:center;';
+  const close = document.createElement('button');
+  close.textContent = '닫기';
+  close.addEventListener('click', ()=>ov.remove());
+  ov.appendChild(im); ov.appendChild(tip); ov.appendChild(close);
+  document.body.appendChild(ov);
+}
+
+/* ---------- init ---------- */
+fitStage();
+})();
+</script>
+</body>
+</html>
