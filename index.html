@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v3</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v4</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button class="primary" id="exportBtn">PNG 내보내기</button>
@@ -204,6 +204,8 @@
         <div class="row"><label>글자 색</label><input type="color" id="tColor" value="#111111">
           <label class="toggle grow"><input type="checkbox" id="tBold" checked> 굵게</label>
         </div>
+        <div class="row"><label>글자 테두리 색</label><input type="color" id="tStrokeColor" value="#ffffff"></div>
+        <div class="row"><label>글자 테두리 두께</label><input type="range" id="tStrokeW" min="0" max="20" value="0"><span class="dim" id="tStrokeWVal">0</span></div>
         <label class="toggle"><input type="checkbox" id="tBgOn"> 텍스트 배경(직사각형)</label>
         <div id="tBgProps" style="display:none; flex-direction:column; gap:9px;">
           <div class="row"><label>배경 색</label><input type="color" id="tBgColor" value="#ffffff"></div>
@@ -361,9 +363,17 @@ function drawTextEl(ctx, el, s){
   const ink = inkMetrics(el);
   const asc = ink.asc*fs, desc = ink.desc*fs;
   ctx.textBaseline = 'alphabetic';
+  const sw = (el.strokeW||0)*s;
   lines.forEach((l,i)=>{
     const slotTop = y + off + i*lh;
-    ctx.fillText(l, x+off, slotTop + (lh + asc - desc)/2);
+    const by = slotTop + (lh + asc - desc)/2;
+    if(sw > 0){
+      ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+      ctx.strokeStyle = el.strokeColor || '#ffffff';
+      ctx.lineWidth = sw*2; // 절반은 글자 안쪽에 겹치므로, 바깥으로 보이는 두께가 설정값이 되도록 2배
+      ctx.strokeText(l, x+off, by);
+    }
+    ctx.fillText(l, x+off, by);
   });
 }
 function imgDrawSize(el){ // scale 1 기준 표시 크기
@@ -548,6 +558,9 @@ function renderProps(){
     $('#tContent').value = el.text;
     $('#tSize').value = el.fontSize; $('#tSizeVal').textContent = el.fontSize;
     $('#tColor').value = el.color; $('#tBold').checked = el.bold;
+    $('#tStrokeColor').value = el.strokeColor || '#ffffff';
+    $('#tStrokeW').value = el.strokeW || 0;
+    $('#tStrokeWVal').textContent = el.strokeW || 0;
     rebuildFontSelect(el.font);
     $('#tBgOn').checked = el.bgOn;
     $('#tBgProps').style.display = el.bgOn ? 'flex':'none';
@@ -603,6 +616,7 @@ $('#addTextBtn').addEventListener('click', ()=>{
   const el = {
     id:idSeq++, type:'text', text:'텍스트를 입력하세요',
     font:SYSTEM_FONTS[0][0], fontSize:64, color:'#111111', bold:true,
+    strokeColor:'#ffffff', strokeW:0,
     bgOn:false, bgColor:'#ffffff', borderColor:'#111111', borderW:2, pad:16,
     x:canvasW*0.12, y:canvasH*0.12
   };
@@ -662,6 +676,8 @@ $('#tContent').addEventListener('input', onSel((el,ev)=>{ el.text=ev.target.valu
 $('#tFont').addEventListener('change', onSel((el,ev)=>{ el.font=ev.target.value; }));
 $('#tSize').addEventListener('input', onSel((el,ev)=>{ el.fontSize=+ev.target.value; $('#tSizeVal').textContent=el.fontSize; }));
 $('#tColor').addEventListener('input', onSel((el,ev)=>{ el.color=ev.target.value; }));
+$('#tStrokeColor').addEventListener('input', onSel((el,ev)=>{ el.strokeColor=ev.target.value; }));
+$('#tStrokeW').addEventListener('input', onSel((el,ev)=>{ el.strokeW=+ev.target.value; $('#tStrokeWVal').textContent=el.strokeW; }));
 $('#tBold').addEventListener('change', onSel((el,ev)=>{ el.bold=ev.target.checked; }));
 $('#tBgOn').addEventListener('change', onSel((el,ev)=>{ el.bgOn=ev.target.checked; $('#tBgProps').style.display=el.bgOn?'flex':'none'; }));
 $('#tBgColor').addEventListener('input', onSel((el,ev)=>{ el.bgColor=ev.target.value; }));
