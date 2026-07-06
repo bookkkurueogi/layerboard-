@@ -18,7 +18,7 @@
     font-size:14px; display:flex; flex-direction:column;
   }
   header{
-    display:flex; align-items:center; gap:12px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel);
     flex:0 0 auto;
   }
@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v7</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v10</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
@@ -198,11 +198,11 @@
         <div class="row"><label>불투명도</label><input type="range" id="imgOpacity" min="10" max="100" value="100"></div>
         <div class="row"><label>테두리 색</label><input type="color" id="imgBorderColor" value="#111111"></div>
         <div class="row"><label>테두리 두께</label><input type="range" id="imgBorderW" min="0" max="40" value="0"><span class="dim" id="imgBorderWVal">0</span></div>
-        <div class="row"><label>흐림</label><input type="range" id="adjBlur" min="0" max="40" value="0"><span class="dim" id="adjBlurVal">0</span></div>
-        <div class="row"><label>밝기</label><input type="range" id="adjBright" min="20" max="200" value="100"><span class="dim" id="adjBrightVal">100</span></div>
+        <div class="row"><label>흐림</label><input type="range" id="adjBlur" min="0" max="100" value="0"><span class="dim" id="adjBlurVal">0</span></div>
+        <div class="row"><label>밝기</label><input type="range" id="adjBright" min="-100" max="100" value="0"><span class="dim" id="adjBrightVal">0</span></div>
         <div class="row"><label>온도</label><input type="range" id="adjTemp" min="-100" max="100" value="0"><span class="dim" id="adjTempVal">0</span></div>
         <div class="row"><label>색조</label><input type="range" id="adjTint" min="-100" max="100" value="0"><span class="dim" id="adjTintVal">0</span></div>
-        <div class="row"><label>채도</label><input type="range" id="adjSat" min="0" max="200" value="100"><span class="dim" id="adjSatVal">100</span></div>
+        <div class="row"><label>채도</label><input type="range" id="adjSat" min="-100" max="100" value="0"><span class="dim" id="adjSatVal">0</span></div>
         <div class="row" id="trimRow" style="display:none">
           <label>구간(초)</label>
           <input type="number" id="trimStart" min="0" step="0.1" style="width:0" class="grow">
@@ -412,71 +412,63 @@ const FILTER_OK = (()=>{ // '지원한다는 응답'이 아니라 실제 렌더 
 })();
 const blurTmp = document.createElement('canvas');
 const blurCtx = blurTmp.getContext('2d');
-const ADJ_DEFAULT = {blur:0, bright:100, temp:0, tint:0, sat:100};
+const blurTmp2 = document.createElement('canvas');
+const blurCtx2 = blurTmp2.getContext('2d');
+const ADJ_DEFAULT = {blur:0, bright:0, temp:0, tint:0, sat:0};
 function adj(el){ return el.adjust || ADJ_DEFAULT; }
 function drawImageEl(ctx, el, s){
   const d = imgDrawSize(el);
   const a = adj(el);
   const x = el.x*s, y = el.y*s, dw = d.w*s, dh = d.h*s;
-  ctx.globalAlpha = el.opacity;
   const cx = el.crop?el.crop.cx:0, cy = el.crop?el.crop.cy:0;
   const cw = el.crop?el.crop.cw:el.w, ch = el.crop?el.crop.ch:el.h;
-  const useFilter = FILTER_OK && el.type!=='video'; // 영상 프레임에 필터가 적용되지 않는 엔진 대비
-  if(useFilter){
-    const parts = [];
-    if(a.blur>0) parts.push('blur('+(a.blur*s)+'px)');
-    if(a.bright!==100) parts.push('brightness('+a.bright+'%)');
-    if(a.sat!==100) parts.push('saturate('+a.sat+'%)');
-    if(parts.length) ctx.filter = parts.join(' ');
-    ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
-    ctx.filter = 'none';
-  }else{
-    if(a.blur>0){
-      // 대체 방식: 축소 후 확대로 흐림 근사
-      const k = 1 + a.blur/3;
-      const tw = Math.max(2, Math.round(dw/k)), th = Math.max(2, Math.round(dh/k));
-      blurTmp.width = tw; blurTmp.height = th;
-      blurCtx.drawImage(el.img, cx, cy, cw, ch, 0, 0, tw, th);
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(blurTmp, 0, 0, tw, th, x, y, dw, dh);
+  ctx.globalAlpha = el.opacity;
+  ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
+  /* 흐림: 원본과 흐린 사본의 비율 섞기 (0=원본, 중간=글로우, 100=완전 흐림) */
+  if(a.blur>0){
+    const g = Math.min(1, 1280/Math.max(dw, dh));
+    const gw = Math.max(2, Math.round(dw*g)), gh = Math.max(2, Math.round(dh*g));
+    const radius = Math.max(1, a.blur/100 * 0.045 * Math.max(gw, gh));
+    if(FILTER_OK){
+      blurTmp.width = gw; blurTmp.height = gh;
+      blurCtx.filter = 'blur('+radius+'px)';
+      blurCtx.drawImage(el.img, cx, cy, cw, ch, 0, 0, gw, gh);
+      blurCtx.filter = 'none';
     }else{
-      ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
+      const k = Math.max(2, radius/1.5);
+      const tw = Math.max(2, Math.round(gw/k)), th = Math.max(2, Math.round(gh/k));
+      blurTmp2.width = tw; blurTmp2.height = th;
+      blurCtx2.drawImage(el.img, cx, cy, cw, ch, 0, 0, tw, th);
+      blurTmp.width = gw; blurTmp.height = gh;
+      blurCtx.imageSmoothingEnabled = true;
+      blurCtx.drawImage(blurTmp2, 0, 0, tw, th, 0, 0, gw, gh);
     }
-    // 대체 방식: 밝기(흰/검 겹치기), 채도(회색 saturation 블렌드, 낮추기만 가능)
-    if(a.bright!==100){
-      ctx.save();
-      ctx.globalAlpha = el.opacity * Math.min(1, Math.abs(a.bright-100)/100);
-      ctx.globalCompositeOperation = a.bright>100 ? 'screen' : 'multiply';
-      ctx.fillStyle = a.bright>100 ? '#ffffff' : '#000000';
-      ctx.fillRect(x, y, dw, dh);
-      ctx.restore();
-    }
-    if(a.sat<100){
-      ctx.save();
-      ctx.globalAlpha = el.opacity * (100-a.sat)/100;
-      ctx.globalCompositeOperation = 'saturation';
-      ctx.fillStyle = '#808080';
-      ctx.fillRect(x, y, dw, dh);
-      ctx.restore();
-    }
+    ctx.globalAlpha = el.opacity * (a.blur/100);
+    ctx.drawImage(blurTmp, 0, 0, gw, gh, x, y, dw, dh);
+    ctx.globalAlpha = el.opacity;
   }
-  // 온도/색조: 표준 필터가 없는 항목이라 두 경로 모두 색 혼합 근사 사용
-  if(a.temp!==0){
+  /* 공통 색 겹치기 도우미 */
+  function overlay(color, mode, alpha){
+    if(alpha<=0) return;
     ctx.save();
-    ctx.globalAlpha = el.opacity * Math.abs(a.temp)/100*0.5;
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = a.temp>0 ? 'rgb(255,140,0)' : 'rgb(0,120,255)';
+    ctx.globalAlpha = el.opacity * Math.min(1, alpha);
+    ctx.globalCompositeOperation = mode;
+    ctx.fillStyle = color;
     ctx.fillRect(x, y, dw, dh);
     ctx.restore();
   }
-  if(a.tint!==0){
-    ctx.save();
-    ctx.globalAlpha = el.opacity * Math.abs(a.tint)/100*0.45;
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = a.tint>0 ? 'rgb(255,0,180)' : 'rgb(0,255,120)';
-    ctx.fillRect(x, y, dw, dh);
-    ctx.restore();
-  }
+  /* 밝기: +는 흰색 screen(밝힘), -는 검정 multiply(어둡힘) */
+  if(a.bright>0) overlay('#ffffff', 'screen', a.bright/100*0.7);
+  else if(a.bright<0) overlay('#000000', 'multiply', -a.bright/100*0.7);
+  /* 온도: 곱하기 방식이라 흰색이 지정 색으로 물듦 (캡처의 흰 벽 변화와 일치) */
+  if(a.temp>0) overlay('rgb(255,210,140)', 'multiply', a.temp/100);
+  else if(a.temp<0) overlay('rgb(165,200,255)', 'multiply', -a.temp/100);
+  /* 색조: 자홍 <-> 녹색 */
+  if(a.tint>0) overlay('rgb(255,175,235)', 'multiply', a.tint/100);
+  else if(a.tint<0) overlay('rgb(210,255,185)', 'multiply', -a.tint/100);
+  /* 채도: saturation 블렌드. 회색이면 빼기, 고채도 색이면 더하기 (영상도 동작) */
+  if(a.sat<0) overlay('#808080', 'saturation', -a.sat/100);
+  else if(a.sat>0) overlay('#ff0000', 'saturation', a.sat/100);
   if(el.borderW > 0){
     const bw = el.borderW*s;
     ctx.strokeStyle = el.borderColor; ctx.lineWidth = bw;
@@ -708,7 +700,7 @@ $('#fileImage').addEventListener('change', async ev=>{
         id:idSeq++, type:'image', img, name:f.name,
         w:img.naturalWidth, h:img.naturalHeight, scale:fit, crop:null,
         borderColor:'#111111', borderW:0,
-        adjust:{blur:0,bright:100,temp:0,tint:0,sat:100},
+        adjust:{blur:0,bright:0,temp:0,tint:0,sat:0},
         x:canvasW*0.1 + page().elements.length*20, y:canvasH*0.1 + page().elements.length*20, opacity:1
       };
       page().elements.push(el); selectedId = el.id;
@@ -776,7 +768,7 @@ $('#imgScale').addEventListener('input', onSel((el,ev)=>{ el.scale=ev.target.val
 $('#imgOpacity').addEventListener('input', onSel((el,ev)=>{ el.opacity=ev.target.value/100; }));
 $('#imgBorderColor').addEventListener('input', onSel((el,ev)=>{ el.borderColor=ev.target.value; }));
 $('#imgBorderW').addEventListener('input', onSel((el,ev)=>{ el.borderW=+ev.target.value; $('#imgBorderWVal').textContent=el.borderW; }));
-function onAdj(key, span){ return onSel((el,ev)=>{ if(!el.adjust) el.adjust={blur:0,bright:100,temp:0,tint:0,sat:100}; el.adjust[key]=+ev.target.value; $(span).textContent=el.adjust[key]; }); }
+function onAdj(key, span){ return onSel((el,ev)=>{ if(!el.adjust) el.adjust={blur:0,bright:0,temp:0,tint:0,sat:0}; el.adjust[key]=+ev.target.value; $(span).textContent=el.adjust[key]; }); }
 $('#adjBlur').addEventListener('input', onAdj('blur','#adjBlurVal'));
 $('#adjBright').addEventListener('input', onAdj('bright','#adjBrightVal'));
 $('#adjTemp').addEventListener('input', onAdj('temp','#adjTempVal'));
@@ -936,7 +928,7 @@ $('#fileVideo').addEventListener('change', async ev=>{
       w:v.videoWidth, h:v.videoHeight, scale:fit, crop:null,
       borderColor:'#111111', borderW:0, useAudio:false,
       trimStart:0, trimEnd:(v.duration||0),
-      adjust:{blur:0,bright:100,temp:0,tint:0,sat:100},
+      adjust:{blur:0,bright:0,temp:0,tint:0,sat:0},
       x:canvasW*0.1, y:canvasH*0.1, opacity:1
     };
     page().elements.push(el); selectedId = el.id;
