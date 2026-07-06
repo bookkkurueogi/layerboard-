@@ -119,9 +119,10 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v4</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v6</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
+  <button id="exportVidBtn">영상 내보내기</button>
   <button class="primary" id="exportBtn">PNG 내보내기</button>
 </header>
 
@@ -145,7 +146,8 @@
         <button id="addTextBtn">텍스트 추가</button>
       </div>
       <div class="btnrow">
-        <button id="addFontBtn">글꼴 파일 업로드 (.ttf / .otf)</button>
+        <button id="addVideoBtn">영상 추가</button>
+        <button id="addFontBtn">글꼴 업로드</button>
       </div>
       <p class="hint">업로드한 글꼴은 이 페이지를 열어둔 동안만 유지됩니다. 새로고침하면 다시 업로드해야 해요.</p>
     </section>
@@ -195,6 +197,14 @@
         <div class="row"><label>불투명도</label><input type="range" id="imgOpacity" min="10" max="100" value="100"></div>
         <div class="row"><label>테두리 색</label><input type="color" id="imgBorderColor" value="#111111"></div>
         <div class="row"><label>테두리 두께</label><input type="range" id="imgBorderW" min="0" max="40" value="0"><span class="dim" id="imgBorderWVal">0</span></div>
+        <div class="row"><label>흐림</label><input type="range" id="adjBlur" min="0" max="40" value="0"><span class="dim" id="adjBlurVal">0</span></div>
+        <div class="row"><label>밝기</label><input type="range" id="adjBright" min="20" max="200" value="100"><span class="dim" id="adjBrightVal">100</span></div>
+        <div class="row"><label>온도</label><input type="range" id="adjTemp" min="-100" max="100" value="0"><span class="dim" id="adjTempVal">0</span></div>
+        <div class="row"><label>색조</label><input type="range" id="adjTint" min="-100" max="100" value="0"><span class="dim" id="adjTintVal">0</span></div>
+        <div class="row"><label>채도</label><input type="range" id="adjSat" min="0" max="200" value="100"><span class="dim" id="adjSatVal">100</span></div>
+        <div class="row" id="audioRow" style="display:none">
+          <label class="toggle grow"><input type="checkbox" id="vidAudio"> 이 영상의 소리 사용 (1개만)</label>
+        </div>
         <div class="btnrow"><button class="small" id="cropBtn">자르기</button><button class="small" id="cropReset">자르기 해제</button></div>
       </div>
       <div id="textProps" style="display:none; flex-direction:column; gap:9px;">
@@ -243,6 +253,7 @@
 </div>
 
 <input type="file" id="fileImage" accept="image/*" multiple hidden>
+<input type="file" id="fileVideo" accept="video/*" hidden>
 <input type="file" id="fileBg" accept="image/*" hidden>
 <input type="file" id="fileFont" accept=".ttf,.otf,.woff,.woff2" hidden>
 <div id="toast"></div>
@@ -381,19 +392,81 @@ function imgDrawSize(el){ // scale 1 기준 표시 크기
   const ch = el.crop ? el.crop.ch : el.h;
   return { w: cw*el.scale, h: ch*el.scale };
 }
+/* 캔버스 2D 필터 지원 감지 (사파리는 지원이 늦었던 이력이 있어 직접 확인) */
+const FILTER_OK = (()=>{ 
+  try{ const t=document.createElement('canvas').getContext('2d'); t.filter='blur(2px)'; return t.filter==='blur(2px)'; }
+  catch(e){ return false; }
+})();
+const blurTmp = document.createElement('canvas');
+const blurCtx = blurTmp.getContext('2d');
+const ADJ_DEFAULT = {blur:0, bright:100, temp:0, tint:0, sat:100};
+function adj(el){ return el.adjust || ADJ_DEFAULT; }
 function drawImageEl(ctx, el, s){
   const d = imgDrawSize(el);
+  const a = adj(el);
+  const x = el.x*s, y = el.y*s, dw = d.w*s, dh = d.h*s;
   ctx.globalAlpha = el.opacity;
-  if(el.crop){
-    ctx.drawImage(el.img, el.crop.cx, el.crop.cy, el.crop.cw, el.crop.ch,
-                  el.x*s, el.y*s, d.w*s, d.h*s);
+  const cx = el.crop?el.crop.cx:0, cy = el.crop?el.crop.cy:0;
+  const cw = el.crop?el.crop.cw:el.w, ch = el.crop?el.crop.ch:el.h;
+  if(FILTER_OK){
+    const parts = [];
+    if(a.blur>0) parts.push('blur('+(a.blur*s)+'px)');
+    if(a.bright!==100) parts.push('brightness('+a.bright+'%)');
+    if(a.sat!==100) parts.push('saturate('+a.sat+'%)');
+    if(parts.length) ctx.filter = parts.join(' ');
+    ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
+    ctx.filter = 'none';
   }else{
-    ctx.drawImage(el.img, el.x*s, el.y*s, d.w*s, d.h*s);
+    if(a.blur>0){
+      // 대체 방식: 축소 후 확대로 흐림 근사
+      const k = 1 + a.blur/3;
+      const tw = Math.max(2, Math.round(dw/k)), th = Math.max(2, Math.round(dh/k));
+      blurTmp.width = tw; blurTmp.height = th;
+      blurCtx.drawImage(el.img, cx, cy, cw, ch, 0, 0, tw, th);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(blurTmp, 0, 0, tw, th, x, y, dw, dh);
+    }else{
+      ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
+    }
+    // 대체 방식: 밝기(흰/검 겹치기), 채도(회색 saturation 블렌드, 낮추기만 가능)
+    if(a.bright!==100){
+      ctx.save();
+      ctx.globalAlpha = el.opacity * Math.min(1, Math.abs(a.bright-100)/100);
+      ctx.globalCompositeOperation = a.bright>100 ? 'screen' : 'multiply';
+      ctx.fillStyle = a.bright>100 ? '#ffffff' : '#000000';
+      ctx.fillRect(x, y, dw, dh);
+      ctx.restore();
+    }
+    if(a.sat<100){
+      ctx.save();
+      ctx.globalAlpha = el.opacity * (100-a.sat)/100;
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(x, y, dw, dh);
+      ctx.restore();
+    }
+  }
+  // 온도/색조: 표준 필터가 없는 항목이라 두 경로 모두 색 혼합 근사 사용
+  if(a.temp!==0){
+    ctx.save();
+    ctx.globalAlpha = el.opacity * Math.abs(a.temp)/100*0.5;
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = a.temp>0 ? 'rgb(255,140,0)' : 'rgb(0,120,255)';
+    ctx.fillRect(x, y, dw, dh);
+    ctx.restore();
+  }
+  if(a.tint!==0){
+    ctx.save();
+    ctx.globalAlpha = el.opacity * Math.abs(a.tint)/100*0.45;
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = a.tint>0 ? 'rgb(255,0,180)' : 'rgb(0,255,120)';
+    ctx.fillRect(x, y, dw, dh);
+    ctx.restore();
   }
   if(el.borderW > 0){
     const bw = el.borderW*s;
     ctx.strokeStyle = el.borderColor; ctx.lineWidth = bw;
-    ctx.strokeRect(el.x*s+bw/2, el.y*s+bw/2, d.w*s-bw, d.h*s-bw);
+    ctx.strokeRect(x+bw/2, y+bw/2, dw-bw, dh-bw);
   }
   ctx.globalAlpha = 1;
 }
@@ -407,14 +480,14 @@ function renderScene(ctx, pg, s){
     ctx.drawImage(pg.bgImage, (canvasW*s-dw)/2, (canvasH*s-dh)/2, dw, dh);
   }
   pg.elements.forEach(el=>{
-    if(el.type==='image') drawImageEl(ctx, el, s);
-    else drawTextEl(ctx, el, s);
+    if(el.type==='text') drawTextEl(ctx, el, s);
+    else drawImageEl(ctx, el, s);
   });
 }
 
 /* ---------- 편집 화면 그리기 ---------- */
 function elBox(el){ // scale 1 기준 히트 박스
-  if(el.type==='image'){ const d=imgDrawSize(el); return {x:el.x, y:el.y, w:d.w, h:d.h}; }
+  if(el.type!=='text'){ const d=imgDrawSize(el); return {x:el.x, y:el.y, w:d.w, h:d.h}; }
   const b = textBox(el); return {x:el.x, y:el.y, w:b.w, h:b.h};
 }
 function redraw(){
@@ -488,7 +561,7 @@ stage.addEventListener('pointermove', ev=>{
   const el = drag.el;
   if(drag.mode==='move'){ el.x = drag.ox+dx; el.y = drag.oy+dy; }
   else{
-    if(el.type==='image'){
+    if(el.type!=='text'){
       const cw = el.crop ? el.crop.cw : el.w;
       el.scale = Math.max(30, drag.bw+dx)/cw;
     }else{
@@ -532,9 +605,9 @@ function renderLayerList(){
     const item = document.createElement('div');
     item.className='layer-item'+(el.id===selectedId?' active':'');
     const tag = document.createElement('span'); tag.className='tag';
-    tag.textContent = el.type==='image'?'IMG':'TXT';
+    tag.textContent = el.type==='image'?'IMG':(el.type==='video'?'VID':'TXT');
     const name = document.createElement('span'); name.className='name';
-    name.textContent = el.type==='image' ? (el.name||'사진') : (el.text.split('\n')[0]||'텍스트');
+    name.textContent = el.type==='text' ? (el.text.split('\n')[0]||'텍스트') : (el.name||(el.type==='video'?'영상':'사진'));
     item.appendChild(tag); item.appendChild(name);
     item.addEventListener('click', ()=>{ selectedId=el.id; renderLayerList(); renderProps(); redraw(); });
     list.appendChild(item);
@@ -546,14 +619,22 @@ function renderProps(){
   const el = sel();
   $('#propsSection').style.display = el ? 'flex':'none';
   if(!el) return;
-  $('#imageProps').style.display = el.type==='image' ? 'flex':'none';
+  $('#imageProps').style.display = el.type!=='text' ? 'flex':'none';
   $('#textProps').style.display  = el.type==='text' ? 'flex':'none';
-  if(el.type==='image'){
+  if(el.type!=='text'){
+    $('#audioRow').style.display = el.type==='video' ? 'flex':'none';
+    $('#vidAudio').checked = !!el.useAudio;
     $('#imgScale').value = Math.max(5, Math.min(200, Math.round(el.scale*100)));
     $('#imgOpacity').value = Math.round(el.opacity*100);
     $('#imgBorderColor').value = el.borderColor || '#111111';
     $('#imgBorderW').value = el.borderW || 0;
     $('#imgBorderWVal').textContent = el.borderW || 0;
+    const a = adj(el);
+    $('#adjBlur').value=a.blur; $('#adjBlurVal').textContent=a.blur;
+    $('#adjBright').value=a.bright; $('#adjBrightVal').textContent=a.bright;
+    $('#adjTemp').value=a.temp; $('#adjTempVal').textContent=a.temp;
+    $('#adjTint').value=a.tint; $('#adjTintVal').textContent=a.tint;
+    $('#adjSat').value=a.sat; $('#adjSatVal').textContent=a.sat;
   }else{
     $('#tContent').value = el.text;
     $('#tSize').value = el.fontSize; $('#tSizeVal').textContent = el.fontSize;
@@ -605,6 +686,7 @@ $('#fileImage').addEventListener('change', async ev=>{
         id:idSeq++, type:'image', img, name:f.name,
         w:img.naturalWidth, h:img.naturalHeight, scale:fit, crop:null,
         borderColor:'#111111', borderW:0,
+        adjust:{blur:0,bright:100,temp:0,tint:0,sat:100},
         x:canvasW*0.1 + page().elements.length*20, y:canvasH*0.1 + page().elements.length*20, opacity:1
       };
       page().elements.push(el); selectedId = el.id;
@@ -672,6 +754,12 @@ $('#imgScale').addEventListener('input', onSel((el,ev)=>{ el.scale=ev.target.val
 $('#imgOpacity').addEventListener('input', onSel((el,ev)=>{ el.opacity=ev.target.value/100; }));
 $('#imgBorderColor').addEventListener('input', onSel((el,ev)=>{ el.borderColor=ev.target.value; }));
 $('#imgBorderW').addEventListener('input', onSel((el,ev)=>{ el.borderW=+ev.target.value; $('#imgBorderWVal').textContent=el.borderW; }));
+function onAdj(key, span){ return onSel((el,ev)=>{ if(!el.adjust) el.adjust={blur:0,bright:100,temp:0,tint:0,sat:100}; el.adjust[key]=+ev.target.value; $(span).textContent=el.adjust[key]; }); }
+$('#adjBlur').addEventListener('input', onAdj('blur','#adjBlurVal'));
+$('#adjBright').addEventListener('input', onAdj('bright','#adjBrightVal'));
+$('#adjTemp').addEventListener('input', onAdj('temp','#adjTempVal'));
+$('#adjTint').addEventListener('input', onAdj('tint','#adjTintVal'));
+$('#adjSat').addEventListener('input', onAdj('sat','#adjSatVal'));
 $('#tContent').addEventListener('input', onSel((el,ev)=>{ el.text=ev.target.value; }));
 $('#tFont').addEventListener('change', onSel((el,ev)=>{ el.font=ev.target.value; }));
 $('#tSize').addEventListener('input', onSel((el,ev)=>{ el.fontSize=+ev.target.value; $('#tSizeVal').textContent=el.fontSize; }));
@@ -704,6 +792,8 @@ $('#dupEl').addEventListener('click', ()=>{
   const el = sel(); if(!el) return;
   const copy = Object.assign({}, el, {id:idSeq++, x:el.x+40, y:el.y+40});
   if(el.crop) copy.crop = Object.assign({}, el.crop);
+  if(el.adjust) copy.adjust = Object.assign({}, el.adjust);
+  if(copy.type==='video') copy.useAudio = false; // 소리 지정은 1개만 유지
   page().elements.push(copy); selectedId=copy.id; renderAll();
 });
 
@@ -712,7 +802,7 @@ const cropModal = $('#cropModal'), cropCanvas = $('#cropCanvas');
 const cctx = cropCanvas.getContext('2d');
 let cropState = null; // {el, cx,cy,cw,ch, fit, cdpr}
 function openCrop(){
-  const el = sel(); if(!el || el.type!=='image') return;
+  const el = sel(); if(!el || el.type==='text') return;
   const maxW = Math.min(window.innerWidth*0.9, 900);
   const maxH = window.innerHeight*0.62;
   const fit = Math.min(maxW/el.w, maxH/el.h);
@@ -803,6 +893,46 @@ $('#cropApply').addEventListener('click', ()=>{
 });
 $('#cropReset').addEventListener('click', onSel(el=>{ el.crop=null; }));
 
+/* ---------- 영상 ---------- */
+function loadVideoFile(file){
+  return new Promise((res,rej)=>{
+    const v = document.createElement('video');
+    v.playsInline = true; v.muted = true; v.loop = true; v.preload = 'auto';
+    v.onloadeddata = ()=>res(v);
+    v.onerror = ()=>rej(new Error('영상을 불러오지 못했습니다: '+file.name));
+    v.src = URL.createObjectURL(file); // 영상은 용량 때문에 blob URL 사용 (사파리 정상 지원)
+  });
+}
+$('#addVideoBtn').addEventListener('click', ()=> $('#fileVideo').click());
+$('#fileVideo').addEventListener('change', async ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  try{
+    const v = await loadVideoFile(f);
+    const fit = Math.min(canvasW*0.6/v.videoWidth, canvasH*0.6/v.videoHeight, 1);
+    const el = {
+      id:idSeq++, type:'video', img:v, name:f.name,
+      w:v.videoWidth, h:v.videoHeight, scale:fit, crop:null,
+      borderColor:'#111111', borderW:0, useAudio:false,
+      adjust:{blur:0,bright:100,temp:0,tint:0,sat:100},
+      x:canvasW*0.1, y:canvasH*0.1, opacity:1
+    };
+    page().elements.push(el); selectedId = el.id;
+    v.addEventListener('seeked', redraw, {once:true});
+    v.currentTime = 0.05; // 첫 프레임 표시 유도
+    renderAll();
+  }catch(e){ toast(e.message); }
+  ev.target.value='';
+});
+$('#vidAudio').addEventListener('change', ev=>{
+  const el = sel(); if(!el || el.type!=='video') return;
+  if(ev.target.checked){
+    page().elements.forEach(e=>{ if(e.type==='video') e.useAudio=false; });
+    el.useAudio = true;
+  }else{
+    el.useAudio = false;
+  }
+});
+
 /* ---------- 내보내기 ---------- */
 function renderPageToDataURL(pg, s){
   const c = document.createElement('canvas');
@@ -859,6 +989,104 @@ function fallbackExport(urls){
   close.addEventListener('click', ()=>ov.remove());
   ov.appendChild(close);
   document.body.appendChild(ov);
+}
+
+/* ---------- 영상 내보내기 ---------- */
+let audioCtx = null;
+const audioSrcMap = new WeakMap(); // createMediaElementSource는 요소당 1회만 허용되므로 재사용
+$('#exportVidBtn').addEventListener('click', ()=>{
+  const pg = page();
+  const vids = pg.elements.filter(e=>e.type==='video');
+  if(!vids.length){ toast('현재 페이지에 영상이 없습니다. 영상 추가 후 사용하세요.'); return; }
+  if(typeof MediaRecorder === 'undefined'){ toast('이 브라우저는 화면 녹화를 지원하지 않습니다.'); return; }
+  const s = +$('#exportScale').value;
+  const W = canvasW*s, H = canvasH*s;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;';
+  document.body.appendChild(c); // 사파리 안정성 위해 문서에 부착한 상태로 녹화
+  const ctx = c.getContext('2d');
+  const dur = Math.min(300, Math.max.apply(null, vids.map(v=>v.img.duration||3)));
+
+  const stream = c.captureStream(30);
+  const audioEl = vids.find(v=>v.useAudio);
+  if(audioEl){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      audioCtx.resume();
+      let src = audioSrcMap.get(audioEl.img);
+      if(!src){ src = audioCtx.createMediaElementSource(audioEl.img); audioSrcMap.set(audioEl.img, src); }
+      const dest = audioCtx.createMediaStreamDestination();
+      src.connect(dest);
+      src.connect(audioCtx.destination); // 녹화 중에도 소리가 들리도록
+      audioEl.img.muted = false;
+      dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+    }catch(e){ toast('소리 연결에 실패해 무음으로 진행합니다.'); }
+  }
+  let mime = '';
+  if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/mp4')) mime = 'video/mp4';
+  else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm')) mime = 'video/webm';
+  const opts = { videoBitsPerSecond: Math.min(60e6, 10e6*s*s) };
+  if(mime) opts.mimeType = mime;
+  const rec = new MediaRecorder(stream, opts);
+  const chunks = [];
+  rec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,11,14,.9);z-index:150;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;';
+  const msg = document.createElement('p'); msg.style.cssText = 'color:#E9EAEC;margin:0;font-size:15px;';
+  const bar = document.createElement('div'); bar.style.cssText = 'width:min(420px,80vw);height:8px;background:#2A2E36;border-radius:4px;overflow:hidden;';
+  const fill = document.createElement('div'); fill.style.cssText = 'height:100%;width:0%;background:#E8B33C;'; bar.appendChild(fill);
+  const cancelBtn = document.createElement('button'); cancelBtn.textContent = '취소';
+  const note = document.createElement('p');
+  note.textContent = '녹화는 실시간으로 진행됩니다. 이 화면을 벗어나면 프레임이 끊길 수 있어요.';
+  note.style.cssText = 'color:#9AA0AB;font-size:12px;margin:0;text-align:center;';
+  ov.appendChild(msg); ov.appendChild(bar); ov.appendChild(cancelBtn); ov.appendChild(note);
+  document.body.appendChild(ov);
+
+  let cancelled = false, raf = 0;
+  function cleanup(){
+    cancelAnimationFrame(raf);
+    vids.forEach(v=>{ v.img.pause(); v.img.muted = true; });
+    ov.remove(); c.remove();
+  }
+  cancelBtn.addEventListener('click', ()=>{ cancelled = true; try{rec.stop();}catch(e){} });
+  rec.onstop = ()=>{
+    cleanup();
+    if(cancelled || !chunks.length){ if(cancelled) toast('내보내기를 취소했습니다.'); return; }
+    const type = mime || 'video/mp4';
+    const blob = new Blob(chunks, {type});
+    const ext = type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    const file = new File([blob], 'collage_'+W+'x'+H+'.'+ext, {type});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file]})
+        .then(()=>toast('공유 시트에서 "비디오 저장"을 누르면 갤러리에 저장됩니다.'))
+        .catch(err=>{ if(err.name!=='AbortError') videoFallback(blob, file.name); });
+    }else{
+      videoFallback(blob, file.name);
+    }
+  };
+  rec.onerror = ()=>{ cancelled = true; cleanup(); toast('녹화 중 오류가 발생했습니다. 배율을 낮춰 다시 시도해 보세요.'); };
+
+  vids.forEach(v=>{ v.img.currentTime = 0; const p = v.img.play(); if(p && p.catch) p.catch(()=>{}); });
+  rec.start(1000);
+  const t0 = performance.now();
+  function frame(){
+    renderScene(ctx, pg, s);
+    const t = (performance.now()-t0)/1000;
+    fill.style.width = Math.min(100, t/dur*100)+'%';
+    msg.textContent = '영상 내보내는 중 '+Math.min(dur,t).toFixed(1)+' / '+dur.toFixed(1)+'초 ('+W+'×'+H+')';
+    if(t >= dur){ try{rec.stop();}catch(e){} return; }
+    raf = requestAnimationFrame(frame);
+  }
+  frame();
+});
+function videoFallback(blob, fname){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('다운로드를 시도했습니다. 저장이 안 되면 사파리에서 열었는지 확인해 주세요.');
+  setTimeout(()=>URL.revokeObjectURL(url), 120000);
 }
 
 /* ---------- init ---------- */
