@@ -119,7 +119,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v10</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v12</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
@@ -414,6 +414,9 @@ const blurTmp = document.createElement('canvas');
 const blurCtx = blurTmp.getContext('2d');
 const blurTmp2 = document.createElement('canvas');
 const blurCtx2 = blurTmp2.getContext('2d');
+const blurTmp3 = document.createElement('canvas');
+const blurCtx3 = blurTmp3.getContext('2d');
+function smoothOn(c){ c.imageSmoothingEnabled = true; try{ c.imageSmoothingQuality = 'high'; }catch(e){} }
 const ADJ_DEFAULT = {blur:0, bright:0, temp:0, tint:0, sat:0};
 function adj(el){ return el.adjust || ADJ_DEFAULT; }
 function drawImageEl(ctx, el, s){
@@ -426,24 +429,44 @@ function drawImageEl(ctx, el, s){
   ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
   /* 흐림: 원본과 흐린 사본의 비율 섞기 (0=원본, 중간=글로우, 100=완전 흐림) */
   if(a.blur>0){
-    const g = Math.min(1, 1280/Math.max(dw, dh));
+    const cap = el.type==='video' ? 1440 : 2560; // 영상은 매 프레임 처리라 성능 고려
+    const g = Math.min(1, cap/Math.max(dw, dh));
     const gw = Math.max(2, Math.round(dw*g)), gh = Math.max(2, Math.round(dh*g));
     const radius = Math.max(1, a.blur/100 * 0.045 * Math.max(gw, gh));
     if(FILTER_OK){
       blurTmp.width = gw; blurTmp.height = gh;
+      smoothOn(blurCtx);
       blurCtx.filter = 'blur('+radius+'px)';
       blurCtx.drawImage(el.img, cx, cy, cw, ch, 0, 0, gw, gh);
       blurCtx.filter = 'none';
     }else{
-      const k = Math.max(2, radius/1.5);
-      const tw = Math.max(2, Math.round(gw/k)), th = Math.max(2, Math.round(gh/k));
-      blurTmp2.width = tw; blurTmp2.height = th;
-      blurCtx2.drawImage(el.img, cx, cy, cw, ch, 0, 0, tw, th);
-      blurTmp.width = gw; blurTmp.height = gh;
-      blurCtx.imageSmoothingEnabled = true;
-      blurCtx.drawImage(blurTmp2, 0, 0, tw, th, 0, 0, gw, gh);
+      /* 피라미드 흐림: 절반씩 n단계 축소 후 절반씩 확대. 단번 확대의 계단 현상을 방지 */
+      const n = Math.max(1, Math.min(6, Math.round(Math.log2(Math.max(2, radius/1.2)))));
+      let curC = blurTmp2, curX = blurCtx2, altC = blurTmp3, altX = blurCtx3;
+      let w = gw, h = gh;
+      curC.width = w; curC.height = h; smoothOn(curX);
+      curX.drawImage(el.img, cx, cy, cw, ch, 0, 0, w, h);
+      const sizes = [];
+      for(let i=0;i<n;i++){
+        sizes.push([w,h]);
+        const nw = Math.max(2, Math.round(w/2)), nh = Math.max(2, Math.round(h/2));
+        altC.width = nw; altC.height = nh; smoothOn(altX);
+        altX.drawImage(curC, 0, 0, w, h, 0, 0, nw, nh);
+        [curC,curX,altC,altX] = [altC,altX,curC,curX];
+        w = nw; h = nh;
+      }
+      for(let i=sizes.length-1;i>=0;i--){
+        const [nw,nh] = sizes[i];
+        altC.width = nw; altC.height = nh; smoothOn(altX);
+        altX.drawImage(curC, 0, 0, w, h, 0, 0, nw, nh);
+        [curC,curX,altC,altX] = [altC,altX,curC,curX];
+        w = nw; h = nh;
+      }
+      blurTmp.width = gw; blurTmp.height = gh; smoothOn(blurCtx);
+      blurCtx.drawImage(curC, 0, 0, w, h, 0, 0, gw, gh);
     }
     ctx.globalAlpha = el.opacity * (a.blur/100);
+    smoothOn(ctx);
     ctx.drawImage(blurTmp, 0, 0, gw, gh, x, y, dw, dh);
     ctx.globalAlpha = el.opacity;
   }
@@ -457,18 +480,25 @@ function drawImageEl(ctx, el, s){
     ctx.fillRect(x, y, dw, dh);
     ctx.restore();
   }
-  /* 밝기: +는 흰색 screen(밝힘), -는 검정 multiply(어둡힘) */
-  if(a.bright>0) overlay('#ffffff', 'screen', a.bright/100*0.7);
-  else if(a.bright<0) overlay('#000000', 'multiply', -a.bright/100*0.7);
-  /* 온도: 곱하기 방식이라 흰색이 지정 색으로 물듦 (캡처의 흰 벽 변화와 일치) */
-  if(a.temp>0) overlay('rgb(255,210,140)', 'multiply', a.temp/100);
-  else if(a.temp<0) overlay('rgb(165,200,255)', 'multiply', -a.temp/100);
-  /* 색조: 자홍 <-> 녹색 */
-  if(a.tint>0) overlay('rgb(255,175,235)', 'multiply', a.tint/100);
-  else if(a.tint<0) overlay('rgb(210,255,185)', 'multiply', -a.tint/100);
-  /* 채도: saturation 블렌드. 회색이면 빼기, 고채도 색이면 더하기 (영상도 동작) */
-  if(a.sat<0) overlay('#808080', 'saturation', -a.sat/100);
-  else if(a.sat>0) overlay('#ff0000', 'saturation', a.sat/100);
+  /* 밝기 +: 자기 자신을 덧셈 합성으로 얹어 픽셀값을 비례 증폭 (뿌예지지 않는 진짜 밝히기) */
+  if(a.bright>0){
+    ctx.save();
+    ctx.globalAlpha = el.opacity * (a.bright/100*0.8);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(ctx.canvas, x, y, dw, dh, x, y, dw, dh);
+    ctx.restore();
+  }else if(a.bright<0){
+    overlay('#000000', 'multiply', -a.bright/100*0.7);
+  }
+  /* 온도: 곱하기 방식. 최대 강도 0.5로 제한 */
+  if(a.temp>0) overlay('rgb(255,210,140)', 'multiply', a.temp/100*0.5);
+  else if(a.temp<0) overlay('rgb(165,200,255)', 'multiply', -a.temp/100*0.5);
+  /* 색조: 자홍 <-> 녹색. 최대 강도 0.5로 제한 */
+  if(a.tint>0) overlay('rgb(255,175,235)', 'multiply', a.tint/100*0.5);
+  else if(a.tint<0) overlay('rgb(210,255,185)', 'multiply', -a.tint/100*0.5);
+  /* 채도: saturation 블렌드. 최대 강도 0.7로 제한 */
+  if(a.sat<0) overlay('#808080', 'saturation', -a.sat/100*0.7);
+  else if(a.sat>0) overlay('#ff0000', 'saturation', a.sat/100*0.7);
   if(el.borderW > 0){
     const bw = el.borderW*s;
     ctx.strokeStyle = el.borderColor; ctx.lineWidth = bw;
