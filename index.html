@@ -178,11 +178,12 @@
       </div>
       <div class="row"><label>내보내기 배율</label>
         <select id="exportScale" class="grow">
-          <option value="1">1× (기본 크기)</option>
-          <option value="2" selected>2× (고해상도)</option>
-          <option value="3">3×</option>
+          <option value="1" selected>1× (설정한 크기 그대로)</option>
+          <option value="2">2× (고해상도, 가로세로 2배)</option>
+          <option value="3">3× (가로세로 3배)</option>
         </select>
       </div>
+      <div class="row"><label>저장 크기</label><span class="dim" id="exportDim"></span></div>
       <div class="row"><label>내보내기 범위</label>
         <select id="exportRange" class="grow">
           <option value="current">현재 페이지만</option>
@@ -554,8 +555,14 @@ function fitStage(){
   viewScale = Math.min(availW/canvasW, availH/canvasH, 1);
   if(viewScale<=0 || !isFinite(viewScale)) viewScale = 0.1;
   $('#canvasDim').textContent = canvasW+'×'+canvasH+' · '+(cur+1)+'/'+pages.length+'페이지';
+  updateExportDim();
   redraw();
 }
+function updateExportDim(){
+  const s = +$('#exportScale').value;
+  $('#exportDim').textContent = (canvasW*s)+'×'+(canvasH*s)+' px';
+}
+$('#exportScale').addEventListener('change', updateExportDim);
 window.addEventListener('resize', fitStage);
 function renderAll(){ fitStage(); renderPageTabs(); renderLayerList(); renderProps(); }
 
