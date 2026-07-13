@@ -84,6 +84,8 @@
   #pageTabs{display:flex; gap:6px; flex-wrap:wrap;}
   #pageTabs button{flex:0 0 auto; min-width:44px;}
   #pageTabs button.active{border-color:var(--accent); color:var(--accent); font-weight:700;}
+  #tplBtns{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  #tplBtns button{font-size:13px; padding:9px 8px;}
   #layerList{display:flex; flex-direction:column; gap:6px;}
   .layer-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px;
@@ -119,7 +121,7 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v14</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v20</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
@@ -138,6 +140,22 @@
         <button class="small" id="addPage">페이지 추가</button>
         <button class="small danger" id="delPage">현재 페이지 삭제</button>
       </div>
+    </section>
+
+    <section>
+      <h2>템플릿</h2>
+      <div class="row"><label>적용 비율</label>
+        <select id="tplRatio" class="grow">
+          <option value="1350" selected>피드 4:5 (1080×1350)</option>
+          <option value="1920">스토리 9:16 (1080×1920)</option>
+          <option value="1080">정사각 1:1 (1080×1080)</option>
+        </select>
+      </div>
+      <div id="tplBtns"></div>
+      <div class="btnrow">
+        <button class="small danger" id="tplClear">템플릿 요소 지우기</button>
+      </div>
+      <p class="hint">사진을 먼저 추가한 뒤 템플릿을 누르면 사진이 슬롯에 자동 배치됩니다. 빈 슬롯은 회색 자리표시가 되고, 이후 사진을 추가하면 자리표시부터 채워져요. 템플릿을 다시 누르면 꾸밈 요소와 텍스트가 초기화됩니다. 선택한 비율에 맞춰 레이아웃이 자동 축소·정렬돼요 (캐러셀 템플릿은 슬라이드마다 해당 비율).</p>
     </section>
 
     <section>
@@ -160,6 +178,8 @@
           <option value="1080x1080">정사각 1080×1080</option>
           <option value="1080x1350">세로 4:5 1080×1350</option>
           <option value="1080x1920">세로 9:16 1080×1920</option>
+          <option value="2160x1920">캐러셀 2장 2160×1920</option>
+          <option value="3240x1920">캐러셀 3장 3240×1920</option>
           <option value="1920x1080">가로 16:9 1920×1080</option>
           <option value="custom">직접 입력</option>
         </select>
@@ -189,11 +209,24 @@
           <option value="all">전체 페이지</option>
         </select>
       </div>
+      <div class="row"><label>캐러셀 분할</label>
+        <select id="exportSplit" class="grow">
+          <option value="0">분할 안 함</option>
+          <option value="1080">가로 1080px 슬라이드로 분할</option>
+        </select>
+      </div>
+      <p class="hint">캐러셀 분할: 넓은 캔버스를 1080px 폭 슬라이드 여러 장으로 잘라 저장합니다. 인스타그램에 순서대로 올리면 요소가 슬라이드를 넘어 이어져 보여요. (PNG 전용, 영상 내보내기에는 적용되지 않습니다)</p>
     </section>
 
     <section id="propsSection" style="display:none">
       <h2>선택한 요소</h2>
       <div id="imageProps" style="display:none; flex-direction:column; gap:9px;">
+        <div class="row"><label>모양</label>
+          <select id="imgShape" class="grow">
+            <option value="rect">사각형</option>
+            <option value="circle">원형</option>
+          </select>
+        </div>
         <div class="row"><label>크기</label><input type="range" id="imgScale" min="5" max="200" value="100"></div>
         <div class="row"><label>불투명도</label><input type="range" id="imgOpacity" min="10" max="100" value="100"></div>
         <div class="row"><label>테두리 색</label><input type="color" id="imgBorderColor" value="#111111"></div>
@@ -230,6 +263,12 @@
           <div class="row"><label>테두리 두께</label><input type="range" id="tBorderW" min="0" max="20" value="2"><span class="dim" id="tBorderWVal">2</span></div>
           <div class="row"><label>안쪽 여백</label><input type="range" id="tPad" min="0" max="80" value="16"><span class="dim" id="tPadVal">16</span></div>
         </div>
+      </div>
+      <div class="row">
+        <label>회전</label>
+        <input type="range" id="elRot" min="-180" max="180" step="1" value="0">
+        <span class="dim" id="elRotVal">0°</span>
+        <button class="small" id="rotReset">0°</button>
       </div>
       <div class="btnrow">
         <button class="small" id="layerUp">한 칸 위로</button>
@@ -282,6 +321,7 @@ const SYSTEM_FONTS = [
   ['-apple-system, "Apple SD Gothic Neo", sans-serif','기본 고딕(시스템)'],
   ['"Apple SD Gothic Neo", sans-serif','애플 SD 고딕'],
   ['serif','명조(시스템 세리프)'],
+  ['"Snell Roundhand","Brush Script MT",cursive','필기체(시스템)'],
   ['ui-monospace, monospace','고정폭']
 ];
 
@@ -367,6 +407,13 @@ function drawTextEl(ctx, el, s){
   const extra = el.bgOn ? (pad+bw)*2 : 0;
   const boxW = maxW + extra, boxH = lines.length*lh + extra;
   const x = el.x*s, y = el.y*s;
+  /* 회전: 상자 중심을 축으로. x,y는 회전 전 좌상단 좌표를 유지한다 */
+  const rad = (el.rot||0)*Math.PI/180;
+  ctx.save();
+  if(rad){
+    const ccx = x+boxW/2, ccy = y+boxH/2;
+    ctx.translate(ccx, ccy); ctx.rotate(rad); ctx.translate(-ccx, -ccy);
+  }
   if(el.bgOn){
     ctx.fillStyle = el.bgColor;
     ctx.fillRect(x, y, boxW, boxH);
@@ -393,6 +440,7 @@ function drawTextEl(ctx, el, s){
     }
     ctx.fillText(l, x+off, by);
   });
+  ctx.restore();
 }
 function imgDrawSize(el){ // scale 1 기준 표시 크기
   const cw = el.crop ? el.crop.cw : el.w;
@@ -425,7 +473,22 @@ function drawImageEl(ctx, el, s){
   const x = el.x*s, y = el.y*s, dw = d.w*s, dh = d.h*s;
   const cx = el.crop?el.crop.cx:0, cy = el.crop?el.crop.cy:0;
   const cw = el.crop?el.crop.cw:el.w, ch = el.crop?el.crop.ch:el.h;
+  /* 회전: 표시 상자 중심을 축으로 */
+  const rad = (el.rot||0)*Math.PI/180;
+  ctx.save();
+  if(rad){
+    const rcx = x+dw/2, rcy = y+dh/2;
+    ctx.translate(rcx, rcy); ctx.rotate(rad); ctx.translate(-rcx, -rcy);
+  }
+  /* 원형 마스크: 표시 상자에 내접하는 타원으로 클립 */
+  const circle = el.shape==='circle';
+  function shapePath(){
+    ctx.beginPath();
+    if(circle) ctx.ellipse(x+dw/2, y+dh/2, dw/2, dh/2, 0, 0, Math.PI*2);
+    else ctx.rect(x, y, dw, dh);
+  }
   ctx.globalAlpha = el.opacity;
+  if(circle){ ctx.save(); shapePath(); ctx.clip(); }
   ctx.drawImage(el.img, cx, cy, cw, ch, x, y, dw, dh);
   /* 흐림: 원본과 흐린 사본의 비율 섞기 (0=원본, 중간=글로우, 100=완전 흐림) */
   if(a.blur>0){
@@ -482,10 +545,21 @@ function drawImageEl(ctx, el, s){
   }
   /* 밝기 +: 자기 자신을 덧셈 합성으로 얹어 픽셀값을 비례 증폭 (뿌예지지 않는 진짜 밝히기) */
   if(a.bright>0){
+    /* 회전 상태에서는 화면(장치) 좌표의 축 정렬 사각형을 샘플링해야 하므로,
+       요소 모양으로 클립한 뒤 변환을 초기화하고 회전된 요소의 외접 사각형을 1:1 복사한다 */
     ctx.save();
-    ctx.globalAlpha = el.opacity * (a.bright/100*0.8);
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(ctx.canvas, x, y, dw, dh, x, y, dw, dh);
+    shapePath(); ctx.clip(); // 현재(회전 포함) 변환 기준 경로 → 장치 좌표에 고정됨
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const co = Math.abs(Math.cos(rad)), si = Math.abs(Math.sin(rad));
+    const rcx2 = x+dw/2, rcy2 = y+dh/2;
+    const bw2 = dw*co + dh*si, bh2 = dw*si + dh*co;
+    let ax = Math.max(0, rcx2-bw2/2), ay = Math.max(0, rcy2-bh2/2);
+    let aw = Math.min(ctx.canvas.width-ax, bw2), ah = Math.min(ctx.canvas.height-ay, bh2);
+    if(aw>0 && ah>0){
+      ctx.globalAlpha = el.opacity * (a.bright/100*0.8);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(ctx.canvas, ax, ay, aw, ah, ax, ay, aw, ah);
+    }
     ctx.restore();
   }else if(a.bright<0){
     overlay('#000000', 'multiply', -a.bright/100*0.7);
@@ -499,18 +573,28 @@ function drawImageEl(ctx, el, s){
   /* 채도: saturation 블렌드. 최대 강도 0.7로 제한 */
   if(a.sat<0) overlay('#808080', 'saturation', -a.sat/100*0.7);
   else if(a.sat>0) overlay('#ff0000', 'saturation', a.sat/100*0.7);
+  if(circle) ctx.restore(); // 원형 클립 해제
   if(el.borderW > 0){
     const bw = el.borderW*s;
     ctx.strokeStyle = el.borderColor; ctx.lineWidth = bw;
-    ctx.strokeRect(x+bw/2, y+bw/2, dw-bw, dh-bw);
+    if(circle){
+      ctx.beginPath();
+      ctx.ellipse(x+dw/2, y+dh/2, dw/2-bw/2, dh/2-bw/2, 0, 0, Math.PI*2);
+      ctx.stroke();
+    }else{
+      ctx.strokeRect(x+bw/2, y+bw/2, dw-bw, dh-bw);
+    }
   }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 function renderScene(ctx, pg, s){
   ctx.fillStyle = pg.bgColor;
   ctx.fillRect(0, 0, canvasW*s, canvasH*s);
   if(pg.bgImage){
-    const iw = pg.bgImage.naturalWidth, ih = pg.bgImage.naturalHeight;
+    /* 템플릿 배경은 캔버스 요소일 수 있어 naturalWidth 대신 width로 대체 */
+    const iw = pg.bgImage.naturalWidth || pg.bgImage.width;
+    const ih = pg.bgImage.naturalHeight || pg.bgImage.height;
     const cover = Math.max(canvasW*s/iw, canvasH*s/ih);
     const dw = iw*cover, dh = ih*cover;
     ctx.drawImage(pg.bgImage, (canvasW*s-dw)/2, (canvasH*s-dh)/2, dw, dh);
@@ -522,9 +606,20 @@ function renderScene(ctx, pg, s){
 }
 
 /* ---------- 편집 화면 그리기 ---------- */
-function elBox(el){ // scale 1 기준 히트 박스
+function elBox(el){ // scale 1 기준 히트 박스 (회전 전 좌표)
   if(el.type!=='text'){ const d=imgDrawSize(el); return {x:el.x, y:el.y, w:d.w, h:d.h}; }
   const b = textBox(el); return {x:el.x, y:el.y, w:b.w, h:b.h};
+}
+/* (cx,cy) 중심으로 점 (px,py)를 rad만큼 회전 */
+function rotPt(cx, cy, px, py, rad){
+  const dx = px-cx, dy = py-cy, c = Math.cos(rad), s = Math.sin(rad);
+  return { x: cx + dx*c - dy*s, y: cy + dx*s + dy*c };
+}
+/* 포인터를 요소의 회전 전 좌표계로 되돌린다 (히트 테스트용) */
+function toLocal(el, b, p){
+  const rad = (el.rot||0)*Math.PI/180;
+  if(!rad) return p;
+  return rotPt(b.x+b.w/2, b.y+b.h/2, p.x, p.y, -rad);
 }
 function redraw(){
   const S = viewScale*dpr;
@@ -536,17 +631,35 @@ function redraw(){
   const el = sel();
   if(el){
     const b = elBox(el);
+    const rad = (el.rot||0)*Math.PI/180;
+    const hw = b.w*S/2, hh = b.h*S/2;
     sctx.save();
+    sctx.translate((b.x+b.w/2)*S, (b.y+b.h/2)*S);
+    sctx.rotate(rad);
     sctx.strokeStyle = '#E8B33C'; sctx.lineWidth = 2*dpr;
     sctx.setLineDash([6*dpr, 5*dpr]);
-    sctx.strokeRect(b.x*S-2*dpr, b.y*S-2*dpr, b.w*S+4*dpr, b.h*S+4*dpr);
+    sctx.strokeRect(-hw-2*dpr, -hh-2*dpr, b.w*S+4*dpr, b.h*S+4*dpr);
     sctx.setLineDash([]);
-    const hx = (b.x+b.w)*S, hy = (b.y+b.h)*S;
-    sctx.beginPath(); sctx.arc(hx, hy, 11*dpr, 0, Math.PI*2);
+    // 회전 핸들: 상자 위쪽 중앙에서 뻗은 줄기 + 원
+    const stem = 30*dpr;
+    sctx.beginPath();
+    sctx.moveTo(0, -hh-2*dpr); sctx.lineTo(0, -hh-stem);
+    sctx.stroke();
+    sctx.beginPath(); sctx.arc(0, -hh-stem-9*dpr, 9*dpr, 0, Math.PI*2);
+    sctx.fillStyle = '#1F2228'; sctx.fill();
+    sctx.lineWidth = 2.5*dpr; sctx.strokeStyle = '#E8B33C'; sctx.stroke();
+    // 크기 핸들: 우하단 원
+    sctx.beginPath(); sctx.arc(hw, hh, 11*dpr, 0, Math.PI*2);
     sctx.fillStyle = '#E8B33C'; sctx.fill();
     sctx.lineWidth = 2.5*dpr; sctx.strokeStyle = '#1A1608'; sctx.stroke();
     sctx.restore();
   }
+}
+/* 화면 표시 기준 회전 핸들 위치 (scale 1 캔버스 좌표) */
+function rotHandlePos(el, b){
+  const rad = (el.rot||0)*Math.PI/180;
+  const off = 39/viewScale; // 줄기 30px + 원 중심까지 9px (화면 픽셀) → 캔버스 좌표
+  return rotPt(b.x+b.w/2, b.y+b.h/2, b.x+b.w/2, b.y - off, rad);
 }
 function fitStage(){
   const pad = 24;
@@ -571,16 +684,29 @@ stage.addEventListener('pointerdown', ev=>{
   const grip = 18/viewScale;
   if(el){
     const b = elBox(el);
-    if(Math.hypot(p.x-(b.x+b.w), p.y-(b.y+b.h)) < grip){
-      drag = {mode:'resize', el, sx:p.x, sy:p.y,
-              scale:el.scale, fontSize:el.fontSize, bw:b.w};
+    const rad = (el.rot||0)*Math.PI/180;
+    const cx = b.x+b.w/2, cy = b.y+b.h/2;
+    // 회전 핸들 (상자 위쪽 원)
+    const rh = rotHandlePos(el, b);
+    if(Math.hypot(p.x-rh.x, p.y-rh.y) < grip){
+      drag = {mode:'rotate', el, cx, cy,
+              a0:Math.atan2(p.y-cy, p.x-cx), r0:el.rot||0};
+      stage.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
+    }
+    // 크기 핸들 (우하단 원, 회전된 위치)
+    const sh = rotPt(cx, cy, b.x+b.w, b.y+b.h, rad);
+    if(Math.hypot(p.x-sh.x, p.y-sh.y) < grip){
+      drag = {mode:'resize', el, cx, cy,
+              d0:Math.max(8, Math.hypot(p.x-cx, p.y-cy)),
+              scale0:el.scale, fs0:el.fontSize};
       stage.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
     }
   }
   const list = page().elements;
   for(let i=list.length-1; i>=0; i--){
     const b = elBox(list[i]);
-    if(p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h){
+    const lp = toLocal(list[i], b, p); // 회전을 되돌린 좌표로 판정
+    if(lp.x>=b.x && lp.x<=b.x+b.w && lp.y>=b.y && lp.y<=b.y+b.h){
       selectedId = list[i].id;
       drag = {mode:'move', el:list[i], sx:p.x, sy:p.y, ox:list[i].x, oy:list[i].y};
       stage.setPointerCapture(ev.pointerId);
@@ -593,20 +719,33 @@ stage.addEventListener('pointerdown', ev=>{
 stage.addEventListener('pointermove', ev=>{
   if(!drag) return;
   const p = stagePos(ev);
-  const dx = p.x-drag.sx, dy = p.y-drag.sy;
   const el = drag.el;
-  if(drag.mode==='move'){ el.x = drag.ox+dx; el.y = drag.oy+dy; }
-  else{
+  if(drag.mode==='move'){
+    el.x = drag.ox + (p.x-drag.sx);
+    el.y = drag.oy + (p.y-drag.sy);
+  }else if(drag.mode==='rotate'){
+    const a = Math.atan2(p.y-drag.cy, p.x-drag.cx);
+    let deg = drag.r0 + (a-drag.a0)*180/Math.PI;
+    deg = ((deg+180)%360+360)%360-180;      // (-180, 180] 범위로 정규화
+    [-180,-90,0,90,180].forEach(t=>{ if(Math.abs(deg-t)<4) deg=t; }); // 직각 스냅
+    el.rot = Math.round(deg*10)/10;
+    if(el.rot===-180) el.rot = 180;
+  }else{ // resize: 중심 고정, 중심-포인터 거리 비율로 크기 결정 (회전 무관하게 동작)
+    const dist = Math.hypot(p.x-drag.cx, p.y-drag.cy);
+    const ratio = Math.max(0.02, dist/drag.d0);
     if(el.type!=='text'){
       const cw = el.crop ? el.crop.cw : el.w;
-      el.scale = Math.max(30, drag.bw+dx)/cw;
+      el.scale = Math.max(30/cw, drag.scale0*ratio);
+      const d = imgDrawSize(el);
+      el.x = drag.cx - d.w/2; el.y = drag.cy - d.h/2;
     }else{
-      const ratio = Math.max(0.1, (drag.bw+dx)/drag.bw);
-      el.fontSize = Math.max(10, Math.min(400, Math.round(drag.fontSize*ratio)));
+      el.fontSize = Math.max(10, Math.min(400, Math.round(drag.fs0*ratio)));
+      const tb = textBox(el);
+      el.x = drag.cx - tb.w/2; el.y = drag.cy - tb.h/2;
     }
   }
   redraw();
-  if(drag.mode==='resize') renderProps();
+  if(drag.mode!=='move') renderProps();
 });
 const endDrag = ()=>{ drag=null; };
 stage.addEventListener('pointerup', endDrag);
@@ -657,6 +796,8 @@ function renderProps(){
   if(!el) return;
   $('#imageProps').style.display = el.type!=='text' ? 'flex':'none';
   $('#textProps').style.display  = el.type==='text' ? 'flex':'none';
+  $('#elRot').value = Math.round(el.rot||0);
+  $('#elRotVal').textContent = Math.round(el.rot||0)+'°';
   if(el.type!=='text'){
     $('#audioRow').style.display = el.type==='video' ? 'flex':'none';
     $('#trimRow').style.display = el.type==='video' ? 'flex':'none';
@@ -668,6 +809,7 @@ function renderProps(){
       $('#trimStart').value = (el.trimStart||0).toFixed(1);
       $('#trimEnd').value = (el.trimEnd||d).toFixed(1);
     }
+    $('#imgShape').value = el.shape||'rect';
     $('#imgScale').value = Math.max(5, Math.min(200, Math.round(el.scale*100)));
     $('#imgOpacity').value = Math.round(el.opacity*100);
     $('#imgBorderColor').value = el.borderColor || '#111111';
@@ -733,7 +875,16 @@ $('#fileImage').addEventListener('change', async ev=>{
         adjust:{blur:0,bright:0,temp:0,tint:0,sat:0},
         x:canvasW*0.1 + page().elements.length*20, y:canvasH*0.1 + page().elements.length*20, opacity:1
       };
-      page().elements.push(el); selectedId = el.id;
+      /* 템플릿 자리표시가 있으면 그 슬롯부터 채운다 (레이어 순서도 자리표시 위치를 그대로 물려받음) */
+      const holder = page().elements.find(e=>e.tpl && e.slot);
+      if(holder){
+        fitToSlot(el, holder.slot);
+        const idx = page().elements.indexOf(holder);
+        page().elements.splice(idx, 1, el);
+      }else{
+        page().elements.push(el);
+      }
+      selectedId = el.id;
     }catch(e){ toast(e.message); }
   }
   ev.target.value=''; renderAll();
@@ -795,6 +946,7 @@ $('#bgImageClear').addEventListener('click', ()=>{ page().bgImage=null; redraw()
 /* ---------- 속성 입력 ---------- */
 function onSel(fn){ return ev=>{ const el=sel(); if(!el) return; fn(el,ev); redraw(); renderLayerList(); }; }
 $('#imgScale').addEventListener('input', onSel((el,ev)=>{ el.scale=ev.target.value/100; }));
+$('#imgShape').addEventListener('change', onSel((el,ev)=>{ el.shape=ev.target.value; }));
 $('#imgOpacity').addEventListener('input', onSel((el,ev)=>{ el.opacity=ev.target.value/100; }));
 $('#imgBorderColor').addEventListener('input', onSel((el,ev)=>{ el.borderColor=ev.target.value; }));
 $('#imgBorderW').addEventListener('input', onSel((el,ev)=>{ el.borderW=+ev.target.value; $('#imgBorderWVal').textContent=el.borderW; }));
@@ -816,6 +968,8 @@ $('#tBgColor').addEventListener('input', onSel((el,ev)=>{ el.bgColor=ev.target.v
 $('#tBorderColor').addEventListener('input', onSel((el,ev)=>{ el.borderColor=ev.target.value; }));
 $('#tBorderW').addEventListener('input', onSel((el,ev)=>{ el.borderW=+ev.target.value; $('#tBorderWVal').textContent=el.borderW; }));
 $('#tPad').addEventListener('input', onSel((el,ev)=>{ el.pad=+ev.target.value; $('#tPadVal').textContent=el.pad; }));
+$('#elRot').addEventListener('input', onSel((el,ev)=>{ el.rot=+ev.target.value; $('#elRotVal').textContent=el.rot+'°'; }));
+$('#rotReset').addEventListener('click', onSel(el=>{ el.rot=0; $('#elRot').value=0; $('#elRotVal').textContent='0°'; }));
 
 /* ---------- 레이어 순서/삭제/복제 ---------- */
 $('#layerUp').addEventListener('click', ()=>{
@@ -961,7 +1115,16 @@ $('#fileVideo').addEventListener('change', async ev=>{
       adjust:{blur:0,bright:0,temp:0,tint:0,sat:0},
       x:canvasW*0.1, y:canvasH*0.1, opacity:1
     };
-    page().elements.push(el); selectedId = el.id;
+    /* 템플릿 자리표시가 있으면 그 슬롯부터 채운다 */
+    const holder = page().elements.find(e=>e.tpl && e.slot);
+    if(holder){
+      fitToSlot(el, holder.slot);
+      const idx = page().elements.indexOf(holder);
+      page().elements.splice(idx, 1, el);
+    }else{
+      page().elements.push(el);
+    }
+    selectedId = el.id;
     v.addEventListener('seeked', redraw, {once:true});
     v.currentTime = 0.05; // 첫 프레임 표시 유도
     renderAll();
@@ -1034,12 +1197,998 @@ $('#previewBtn').addEventListener('click', ()=>{
   })();
 });
 
+/* ==========================================================
+   템플릿: 배경 질감 + 꾸밈 스티커 + 텍스트 + 사진 슬롯
+   - 배경은 절차 생성한 캔버스를 페이지 배경(bgImage)으로 사용
+   - 꾸밈은 투명 캔버스를 그린 뒤 일반 이미지 요소로 추가 (tpl 표시)
+   - 사진은 슬롯에 자동 배치: 중앙 크롭 + 크기 조정 (기존 crop/scale 그대로 사용)
+   - 모든 좌표는 1080×1920 기준
+   ========================================================== */
+const TW = 1080, TH = 1920, TRES = 2; // 스티커는 2배 해상도로 그려 2× 내보내기에서도 선명
+
+function fitToSlot(el, slot){
+  const a = slot.w/slot.h;
+  let cw = el.w, ch = el.h;
+  if(cw/ch > a) cw = Math.round(ch*a); else ch = Math.round(cw/a);
+  const full = (cw===el.w && ch===el.h);
+  el.crop = full ? null : {cx:Math.round((el.w-cw)/2), cy:Math.round((el.h-ch)/2), cw, ch};
+  el.scale = slot.w/cw;
+  el.x = slot.x; el.y = slot.y;
+  el.rot = slot.rot||0;
+  el.shape = slot.shape||'rect';
+  el.borderW = slot.border||0;
+  if(slot.border) el.borderColor = '#ffffff';
+}
+function makeCanvas(w, h, draw, res){
+  res = res||TRES;
+  const c = document.createElement('canvas');
+  c.width = Math.round(w*res); c.height = Math.round(h*res);
+  const x = c.getContext('2d');
+  x.scale(res, res);
+  draw(x, w, h);
+  return c;
+}
+function stickerEl(name, x, y, w, h, draw, pad){
+  pad = pad||0;
+  const c = makeCanvas(w+pad*2, h+pad*2, (ctx)=>{ ctx.translate(pad, pad); draw(ctx, w, h); });
+  return {id:idSeq++, type:'image', tpl:true, img:c, name:'꾸밈: '+name,
+    w:c.width, h:c.height, scale:1/TRES, crop:null,
+    borderColor:'#111111', borderW:0,
+    adjust:{blur:0,bright:0,temp:0,tint:0,sat:0},
+    x:x-pad, y:y-pad, opacity:1};
+}
+function textEl(text, x, y, props){
+  return Object.assign({
+    id:idSeq++, type:'text', tpl:true, text, x, y,
+    font:SYSTEM_FONTS[0][0], fontSize:48, color:'#111111', bold:true,
+    strokeColor:'#ffffff', strokeW:0,
+    bgOn:false, bgColor:'#ffffff', borderColor:'#111111', borderW:0, pad:16
+  }, props);
+}
+const CURSIVE = '"Snell Roundhand","Brush Script MT",cursive';
+
+/* --- 스티커 그리기 프리미티브 --- */
+function tRR(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+function tSparkle(ctx, x, y, s, color){
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = color||'#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(0,-s);
+  ctx.quadraticCurveTo(s*0.12,-s*0.12, s,0);
+  ctx.quadraticCurveTo(s*0.12,s*0.12, 0,s);
+  ctx.quadraticCurveTo(-s*0.12,s*0.12, -s,0);
+  ctx.quadraticCurveTo(-s*0.12,-s*0.12, 0,-s);
+  ctx.fill(); ctx.restore();
+}
+function tFolder(ctx, s, c1, c2){
+  c1 = c1||'#7cc3f7'; c2 = c2||'#3f9bea';
+  const g = ctx.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  tRR(ctx, 0, s*0.14, s*0.42, s*0.14, s*0.05); ctx.fill();
+  tRR(ctx, 0, s*0.2, s, s*0.68, s*0.08); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  tRR(ctx, 0, s*0.2, s, s*0.1, s*0.05); ctx.fill();
+}
+function tWindow(ctx, w, h, title, hole){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 22; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = '#ffffff';
+  tRR(ctx, 0, 0, w, h, 20); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.arc(32+i*32, 30, 9, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle = '#3a3a3a';
+  ctx.font = '600 26px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, w/2, 39);
+  const by = h-42;
+  ctx.fillStyle = '#e84040';
+  ctx.beginPath(); ctx.arc(w/2, by, 24, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(w/2, by, 11, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#efefef';
+  tRR(ctx, w-160, by-19, 130, 38, 19); ctx.fill();
+  ctx.fillStyle = '#555555';
+  ctx.font = '500 22px -apple-system, sans-serif';
+  ctx.fillText('Effects', w-95, by+7);
+  ctx.clearRect(hole.x, hole.y, hole.w, hole.h); // 사진이 비치는 구멍
+  ctx.restore();
+}
+function tTapeIn(ctx, cx, cy, w, h, rot){
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot*Math.PI/180);
+  ctx.beginPath(); ctx.rect(-w/2, -h/2, w, h); ctx.clip();
+  ctx.fillStyle = 'rgba(255,225,232,0.78)';
+  ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.fillStyle = 'rgba(240,170,185,0.78)';
+  for(let i=-w; i<w; i+=32){
+    ctx.save(); ctx.translate(i, 0); ctx.rotate(Math.PI/4);
+    ctx.fillRect(-8, -h, 16, h*2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function tEnvelope(ctx, w, h){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = '#57aef0';
+  tRR(ctx, 0, 0, w, h, 14); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#3e97dd';
+  ctx.beginPath();
+  ctx.moveTo(0, 8); ctx.lineTo(w/2, h*0.58); ctx.lineTo(w, 8);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function tDock(ctx, w, h){
+  const cols = ['#8e8e93','#ff7ab8','#e0442e','#a06bf0','#f5a623','#2f7cf6'];
+  const gap = 12, s = (w-gap*(cols.length+1))/cols.length;
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  tRR(ctx, 0, 0, w, h, 24); ctx.fill();
+  cols.forEach((c,i)=>{
+    ctx.fillStyle = c;
+    tRR(ctx, gap+i*(s+gap), (h-s)/2, s, s, 18); ctx.fill();
+  });
+}
+function tPill(ctx, w, h){
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5;
+  tRR(ctx, 0, 0, w, h, h/2); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#9a9a9a';
+  ctx.font = '500 22px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Tap and hold to react', w/2, 36);
+  ctx.font = '40px -apple-system, sans-serif';
+  ['📷','☕','🎧','😊','📒','＋'].forEach((e,i)=>{
+    ctx.fillText(e, 62+i*((w-124)/5), h-30);
+  });
+  ctx.restore();
+}
+function tChatbar(ctx, w, h){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5;
+  ctx.fillStyle = '#2f7cf6';
+  ctx.beginPath(); ctx.arc(58, h/2, 44, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  tRR(ctx, 118, (h-96)/2, w-244, 96, 48); ctx.fill();
+  ctx.fillStyle = '#2f7cf6';
+  ctx.beginPath(); ctx.arc(w-58, h/2, 40, 0, Math.PI*2); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 52px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('+', 58, h/2+18);
+  ctx.fillText('↑', w-58, h/2+16);
+  ctx.restore();
+}
+function tStrip(ctx, w, h, holes){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.shadowColor = 'transparent';
+  holes.forEach(o=>ctx.clearRect(o.x, o.y, o.w, o.h));
+  ctx.restore();
+}
+function tPanel(ctx, w, h, holes){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 28; ctx.shadowOffsetY = 12;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#2f6bf0';
+  ctx.fillRect(0, 0, w, 260);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.font = '500 34px -apple-system, sans-serif';
+  ctx.fillText('Select all images with', 40, 66);
+  ctx.font = '500 28px -apple-system, sans-serif';
+  ctx.fillText('Click verify once there are none left', 40, 232);
+  ctx.fillStyle = '#2f6bf0';
+  tRR(ctx, w-256, h-96, 216, 70, 10); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 36px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Verify', w-148, h-49);
+  holes.forEach(o=>ctx.clearRect(o.x, o.y, o.w, o.h));
+  ctx.restore();
+}
+/* 플립 시계: 검은 카드 두 장 (숫자는 편집 가능한 텍스트 요소로 얹음) */
+function tFlipClock(ctx, w, h){
+  const cw = (w-16)/2;
+  for(let i=0; i<2; i++){
+    const x = i*(cw+16);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#191919';
+    tRR(ctx, x, 0, cw, h, 14); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';   // 플립 접힘선
+    ctx.fillRect(x, h/2-1, cw, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(x, h/2+1, cw, 3);
+  }
+}
+/* 카메라 뷰파인더: 노란 모서리 브래킷 + 세로선 + 해 아이콘 */
+function tViewfinder(ctx, w, h){
+  const Y = '#f2c744';
+  ctx.strokeStyle = Y; ctx.fillStyle = Y; ctx.lineWidth = 5;
+  const bs = Math.min(w-110, h), L = bs*0.16;   // 브래킷 사각형 한 변, 모서리 길이
+  [[0,0,1,1],[bs,0,-1,1],[0,bs,1,-1],[bs,bs,-1,-1]].forEach(([x,y,sx,sy])=>{
+    ctx.beginPath();
+    ctx.moveTo(x+sx*L, y); ctx.lineTo(x, y); ctx.lineTo(x, y+sy*L);
+    ctx.stroke();
+  });
+  [[bs/2,0,0,1],[bs/2,bs,0,-1],[0,bs/2,1,0],[bs,bs/2,-1,0]].forEach(([x,y,sx,sy])=>{
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x+sx*L*0.6, y+sy*L*0.6);
+    ctx.stroke();
+  });
+  const sx0 = bs+62, sy0 = bs/2;                 // 해 + 세로 기준선
+  ctx.beginPath(); ctx.moveTo(sx0, sy0-bs*0.55); ctx.lineTo(sx0, sy0-26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx0, sy0+26); ctx.lineTo(sx0, sy0+bs*0.55); ctx.stroke();
+  ctx.beginPath(); ctx.arc(sx0, sy0, 13, 0, Math.PI*2); ctx.fill();
+  for(let i=0; i<8; i++){
+    const a = i*Math.PI/4;
+    ctx.beginPath();
+    ctx.moveTo(sx0+Math.cos(a)*19, sy0+Math.sin(a)*19);
+    ctx.lineTo(sx0+Math.cos(a)*27, sy0+Math.sin(a)*27);
+    ctx.stroke();
+  }
+}
+/* 음악 위젯: 반투명 패널 + 진행 바 + 컨트롤 (제목/아티스트는 텍스트 요소) */
+function tMusicWidget(ctx, w, h){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = 'rgba(24,24,26,0.78)';
+  tRR(ctx, 0, 0, w, h, 26); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  const px = 34, py = h*0.52, pw = w-68;         // 진행 바
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px+pw, py); ctx.stroke();
+  ctx.strokeStyle = '#ffffff';
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px+pw*0.35, py); ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(px+pw*0.35, py, 8, 0, Math.PI*2); ctx.fill();
+  ctx.font = '500 22px -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillText('0:23', px, py+34);
+  const cy = h*0.78, cx = w/2;                   // 이전/재생/다음
+  function tri(x, dir){
+    ctx.beginPath();
+    ctx.moveTo(x, cy-14); ctx.lineTo(x, cy+14); ctx.lineTo(x+dir*22, cy);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#ffffff';
+  tri(cx-72, -1); ctx.fillRect(cx-98, cy-14, 5, 28);
+  ctx.fillRect(cx-8, cy-16, 8, 32); ctx.fillRect(cx+6, cy-16, 8, 32);
+  tri(cx+50, 1); ctx.fillRect(cx+74, cy-14, 5, 28);
+  ctx.restore();
+}
+/* 집중모드 필: 반투명 알약 + 아이콘 (라벨은 편집 가능한 텍스트 요소) */
+function tGlassPill(ctx, w, h, icon){
+  ctx.fillStyle = 'rgba(25,25,28,0.45)';
+  tRR(ctx, 0, 0, w, h, h/2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  const ix = 74, iy = h/2;
+  if(icon==='moon'){
+    ctx.beginPath(); ctx.arc(ix, iy, 26, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.arc(ix+15, iy-11, 22, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }else if(icon==='person'){
+    ctx.beginPath(); ctx.arc(ix, iy-13, 13, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ix, iy+27, 24, Math.PI, 0); ctx.closePath(); ctx.fill();
+  }else{ // bed
+    tRR(ctx, ix-28, iy-4, 56, 20, 6); ctx.fill();
+    tRR(ctx, ix-24, iy-15, 20, 12, 4); ctx.fill();
+  }
+}
+/* 말꼬리 달린 회백색 타이틀 필 (텍스트는 요소로 얹음) */
+function tChatPill(ctx, w, h){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5;
+  ctx.fillStyle = '#f1f1f3';
+  tRR(ctx, 0, 0, w, h-16, (h-16)/2); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath();
+  ctx.moveTo(w*0.78, h-20); ctx.lineTo(w*0.84, h); ctx.lineTo(w*0.87, h-18);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+/* 컬러 칩 카드: 흰 카드 + 상단 사진 구멍 (라벨은 텍스트 요소) */
+function tChip(ctx, w, h){
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.shadowColor = 'transparent';
+  ctx.clearRect(14, 14, w-28, w-28);
+  ctx.restore();
+}
+/* 모눈종이 배경 */
+function bgGrid(ctx, w, h){
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#e4e4e7';
+  ctx.lineWidth = 2;
+  for(let x=36; x<w; x+=72){
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for(let y=36; y<h; y+=72){
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+}
+/* 점선 곡선 경로 (재설계):
+   - 각 가닥을 촘촘히 샘플링한 뒤 호 길이 기준 50px 간격으로 리샘플링 → 점 간격 균일
+   - 원형 사진 반경 + 여유(32px) 안에 들어오는 점은 제거 → 사진을 절대 가리지 않음 */
+function tDotsPath(ctx, w, h){
+  const P = Math.PI;
+  // 원형 슬롯 중심/반지름 (스티커 로컬 좌표 = 캔버스 y-980)
+  const circles = [[170,140,90],[930,140,90],[560,370,80],[170,670,90],[920,690,80]];
+  function arcPts(cx, cy, r, a0, a1, n){
+    const a = [];
+    for(let i=0; i<=n; i++){
+      const t = a0 + (a1-a0)*i/n;
+      a.push([cx+Math.cos(t)*r, cy+Math.sin(t)*r]);
+    }
+    return a;
+  }
+  function bezPts(p, n){
+    const a = [];
+    for(let i=0; i<=n; i++){
+      const t = i/n, u = 1-t;
+      a.push([
+        u*u*u*p[0][0] + 3*u*u*t*p[1][0] + 3*u*t*t*p[2][0] + t*t*t*p[3][0],
+        u*u*u*p[0][1] + 3*u*u*t*p[1][1] + 3*u*t*t*p[2][1] + t*t*t*p[3][1]
+      ]);
+    }
+    return a;
+  }
+  const strands = [];
+  // ① 좌상단 원을 감싸는 열린 링
+  strands.push(arcPts(170, 140, 150, 0.12*P, 1.75*P, 72));
+  // ② 가운데 원을 반 바퀴 감고 오른쪽 원들 사이 통로로 빠져나가는 S자
+  const s2 = [];
+  s2.push(...bezPts([[300,250],[360,300],[400,340],[420,370]], 24));
+  s2.push(...arcPts(560, 370, 140, P, -0.15*P, 48));
+  s2.push(...bezPts([[685,306],[800,240],[860,360],[960,430]], 30));
+  s2.push(...bezPts([[960,430],[1040,480],[1000,520],[1090,560]], 18));
+  strands.push(s2);
+  // ③ 좌하단 원을 감싸는 열린 링
+  strands.push(arcPts(170, 670, 148, -0.4*P, 1.1*P, 60));
+  // ④ 우하단 원 왼쪽을 스치는 짧은 악센트
+  strands.push(arcPts(920, 690, 135, 0.7*P, 1.55*P, 30));
+  ctx.fillStyle = '#141414';
+  const STEP = 50, MARGIN = 32, DOT = 10;
+  strands.forEach(pts=>{
+    let acc = 0;
+    for(let i=0; i<pts.length; i++){
+      if(i>0){
+        acc += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]);
+        if(acc < STEP) continue;
+        acc = 0;
+      }
+      const [px, py] = pts[i];
+      if(px < 16 || px > w-4 || py < 16 || py > h-16) continue;
+      if(circles.some(c=>Math.hypot(px-c[0], py-c[1]) < c[2]+MARGIN)) continue;
+      ctx.beginPath(); ctx.arc(px, py, DOT, 0, P*2); ctx.fill();
+    }
+  });
+}
+/* 시계 바늘: 시침(검정)/분침(빨강)/초침(회색) + 중앙 분홍 사각 */
+function tClockHands(ctx, w, h){
+  const cx = w/2, cy = h/2;
+  ctx.fillStyle = '#f6b8ea';
+  ctx.fillRect(cx-20, cy-20, 40, 40);
+  function hand(angleDeg, len, back, width, color){
+    const a = (angleDeg-90)*Math.PI/180;
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx-Math.cos(a)*back, cy-Math.sin(a)*back);
+    ctx.lineTo(cx+Math.cos(a)*len, cy+Math.sin(a)*len);
+    ctx.stroke();
+  }
+  hand(305, w*0.42, 10, 9, '#e03535');   // 분침(빨강, 길게)
+  hand(50,  w*0.3,  10, 9, '#141414');   // 시침(검정)
+  hand(150, w*0.46, 26, 6, '#b9b9bd');   // 초침(회색)
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI*2); ctx.fill();
+}
+/* 바인더 링: 은색 고리 7개가 가로로 늘어선 스티커 */
+function tRings(ctx, w, h){
+  const n = 7, cy = h/2;
+  for(let i=0; i<n; i++){
+    const cx = w*(i+0.5)/n;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4;
+    ctx.strokeStyle = '#c9c9cd'; ctx.lineWidth = 15;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 26, h*0.42, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = '#f2f2f4'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(cx-4, cy-3, 24, h*0.4, -0.06, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+function tPlaceholder(ctx, w, h, n){
+  ctx.fillStyle = '#d7d2c9';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#b7b1a6'; ctx.lineWidth = 3;
+  ctx.setLineDash([14, 10]);
+  ctx.strokeRect(8, 8, w-16, h-16);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#8f8a80';
+  ctx.font = '600 '+Math.min(40, w*0.12)+'px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('사진 '+n, w/2, h/2+12);
+}
+
+/* --- 배경 질감 --- */
+function bgNoise(ctx, base, grain, intensity, bw, bh){
+  bw = bw||TW; bh = bh||TH;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, bw, bh);
+  const img = ctx.getImageData(0, 0, bw, bh);
+  const d = img.data;
+  for(let i=0; i<d.length; i+=4){
+    const n = (Math.random()-0.5)*intensity;
+    d[i]+=n; d[i+1]+=n; d[i+2]+=n;
+  }
+  ctx.putImageData(img, 0, 0);
+  for(let k=0; k<Math.round(14*bw/TW); k++){
+    const gx = Math.random()*bw, gy = Math.random()*bh, gr = 120+Math.random()*380;
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    g.addColorStop(0, grain);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(gx-gr, gy-gr, gr*2, gr*2);
+  }
+}
+function bgStamp(ctx, word, x, y, size, alpha, rot){
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate((rot||0)*Math.PI/180);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#161616';
+  ctx.font = '900 '+size+'px "Arial Black","Helvetica Neue",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(word, 0, 0);
+  ctx.restore();
+}
+
+/* --- 템플릿 정의 --- */
+const TEMPLATES = [
+  {
+    id:'booth', name:'포토부스',
+    bg(ctx){
+      bgNoise(ctx, '#efece6', 'rgba(120,110,95,0.06)', 22);
+      for(let i=0; i<6; i++){
+        const g = ctx.createLinearGradient(0, i*340, 0, i*340+200);
+        g.addColorStop(0, 'rgba(0,0,0,0.04)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, i*340, TW, 200);
+      }
+    },
+    slots:[{x:120, y:400, w:840, h:650}],
+    stickers(){
+      return [
+        stickerEl('별', 150, 190, 64, 64, (c)=>tSparkle(c, 32, 32, 28)),
+        stickerEl('별', 890, 230, 52, 52, (c)=>tSparkle(c, 26, 26, 22)),
+        stickerEl('별', 110, 1290, 56, 56, (c)=>tSparkle(c, 28, 28, 24)),
+        stickerEl('별', 930, 1470, 64, 64, (c)=>tSparkle(c, 32, 32, 28)),
+        stickerEl('포토부스 창', 90, 340, 900, 800,
+          (c,w,h)=>tWindow(c, w, h, 'Photo Booth', {x:30, y:60, w:840, h:650}), 30)
+      ];
+    },
+    texts(){
+      return [
+        textEl('📍 AUGUST', 560, 1300, {fontSize:40, color:'#333333', bold:true,
+          bgOn:true, bgColor:'#ffffff', borderW:0, pad:16}),
+        textEl('Welcome', 280, 1400, {font:CURSIVE, fontSize:150, color:'#ffffff', bold:true,
+          strokeColor:'#00000055'})
+      ];
+    }
+  },
+  {
+    id:'strip', name:'필름 스트립',
+    bg(ctx){ bgNoise(ctx, '#c9c2b6', 'rgba(90,80,60,0.07)', 20); },
+    slots:[
+      {x:0, y:0, w:1080, h:1920},          // 풀블리드 배경 사진
+      /* 스트립 프레임이 중심(540,900) 기준 -4° 회전하므로,
+         각 구멍의 회전 후 중심에 슬롯을 두고 같은 각도로 돌린다 */
+      {x:361, y:291, w:300, h:380, rot:-4},
+      {x:389, y:700, w:300, h:380, rot:-4},
+      {x:418, y:1109, w:300, h:380, rot:-4}
+    ],
+    stickers(){
+      return [
+        Object.assign(stickerEl('필름 스트립', 360, 260, 360, 1280, (c,w,h)=>tStrip(c, w, h, [
+          {x:30, y:30, w:300, h:380},
+          {x:30, y:440, w:300, h:380},
+          {x:30, y:850, w:300, h:380}
+        ]), 30), {rot:-4}),
+        stickerEl('테이프', 380, 195, 340, 150, (c)=>tTapeIn(c, 170, 75, 300, 76, -8)),
+        stickerEl('채팅 입력바', 60, 1640, 960, 140, (c,w,h)=>tChatbar(c, w, h), 20)
+      ];
+    },
+    texts(){
+      return [ textEl('soOoO gOodD 😋', 210, 1666, {fontSize:38, color:'#222222', bold:false}) ];
+    }
+  },
+  {
+    id:'desk', name:'데스크톱 콜라주',
+    bg(ctx){
+      bgNoise(ctx, '#d8d5cf', 'rgba(90,85,75,0.09)', 30);
+      bgStamp(ctx, 'ONLY', 540, 300, 200, 0.8, -2);
+      bgStamp(ctx, 'KISS', 880, 1180, 160, 0.7, 3);
+    },
+    slots:[
+      {x:250, y:420, w:560, h:430, border:16, rot:2},
+      {x:110, y:1000, w:460, h:560, border:16, rot:-5},
+      {x:590, y:1120, w:420, h:340, border:16, rot:4}
+    ],
+    stickers(){
+      return [
+        stickerEl('폴더', 760, 330, 130, 115, (c)=>tFolder(c, 130)),
+        stickerEl('폴더', 150, 900, 120, 106, (c)=>tFolder(c, 120)),
+        Object.assign(stickerEl('봉투', 700, 660, 380, 266, (c,w,h)=>tEnvelope(c, w, h), 24), {rot:8}),
+        stickerEl('별', 190, 680, 60, 60, (c)=>tSparkle(c, 30, 30, 26)),
+        stickerEl('별', 920, 1540, 64, 64, (c)=>tSparkle(c, 32, 32, 28)),
+        stickerEl('별', 495, 1660, 50, 50, (c)=>tSparkle(c, 25, 25, 21)),
+        stickerEl('독 바', 225, 1740, 630, 116, (c,w,h)=>tDock(c, w, h))
+      ];
+    },
+    texts(){
+      return [
+        textEl('July', 800, 770, {font:CURSIVE, fontSize:76, color:'#ffffff', bold:true, rot:8}),
+        textEl('memories', 148, 1020, {fontSize:30, color:'#ffffff', bold:false,
+          strokeColor:'#00000088', strokeW:3})
+      ];
+    }
+  },
+  {
+    id:'chatnight', name:'나이트 채팅',
+    bg(ctx){ bgNoise(ctx, '#2a2a2c', 'rgba(0,0,0,0.25)', 34); },
+    slots:[{x:120, y:440, w:840, h:610}],
+    stickers(){
+      return [
+        stickerEl('별', 910, 270, 60, 60, (c)=>tSparkle(c, 30, 30, 26)),
+        stickerEl('별', 100, 1120, 52, 52, (c)=>tSparkle(c, 26, 26, 22)),
+        stickerEl('별', 960, 1590, 60, 60, (c)=>tSparkle(c, 30, 30, 26)),
+        stickerEl('포토부스 창', 90, 380, 900, 760,
+          (c,w,h)=>tWindow(c, w, h, 'Photo Booth', {x:30, y:60, w:840, h:610}), 30),
+        stickerEl('폴더', 830, 1200, 130, 115, (c)=>tFolder(c, 130)),
+        stickerEl('리액션 바', 230, 1380, 620, 120, (c,w,h)=>tPill(c, w, h), 16)
+      ];
+    },
+    texts(){
+      return [
+        textEl('(3).jpg', 850, 1330, {fontSize:30, color:'#ffffff', bold:false,
+          strokeColor:'#000000aa', strokeW:3}),
+        textEl('just a tiny slice of my day', 300, 1570, {fontSize:38, color:'#ffffff', bold:false,
+          bgOn:true, bgColor:'#2f7cf6', borderW:0, pad:22})
+      ];
+    }
+  },
+  {
+    id:'verify', name:'그리드 베리파이',
+    bg(ctx){ bgNoise(ctx, '#232228', 'rgba(0,0,0,0.22)', 28); },
+    slots:[
+      {x:0, y:0, w:1080, h:1920},           // 풀블리드 배경 사진
+      {x:150, y:620, w:385, h:385},
+      {x:545, y:620, w:385, h:385},
+      {x:150, y:1015, w:385, h:385},
+      {x:545, y:1015, w:385, h:385}
+    ],
+    stickers(){
+      return [
+        stickerEl('별', 140, 300, 56, 56, (c)=>tSparkle(c, 28, 28, 24)),
+        stickerEl('별', 940, 480, 48, 48, (c)=>tSparkle(c, 24, 24, 20)),
+        stickerEl('별', 180, 1680, 52, 52, (c)=>tSparkle(c, 26, 26, 22)),
+        stickerEl('베리파이 패널', 140, 340, 800, 1180, (c,w,h)=>tPanel(c, w, h, [
+          {x:10, y:280, w:385, h:385},
+          {x:405, y:280, w:385, h:385},
+          {x:10, y:675, w:385, h:385},
+          {x:405, y:675, w:385, h:385}
+        ]), 30),
+        stickerEl('폴더', 160, 1600, 120, 106, (c)=>tFolder(c, 120))
+      ];
+    },
+    texts(){
+      return [
+        textEl('MY JULY', 180, 415, {fontSize:96, color:'#ffffff', bold:true}),
+        textEl('(1).jpg', 158, 1720, {fontSize:30, color:'#ffffff', bold:false,
+          strokeColor:'#000000aa', strokeW:3})
+      ];
+    }
+  },
+  {
+    id:'flipdiary', name:'플립 다이어리',
+    bg(ctx, w, h){ bgNoise(ctx, '#1c1c1e', 'rgba(0,0,0,0.25)', 26, w, h); },
+    slots:[
+      {x:0, y:0,   w:1080, h:960},   // 위 사진
+      {x:0, y:960, w:1080, h:960}    // 아래 사진
+    ],
+    stickers(){
+      return [
+        /* 두 사진의 이음새(y=960)에 걸치는 플립 시계 */
+        stickerEl('플립 시계', 390, 865, 300, 190, (c,w,h)=>tFlipClock(c, w, h), 20),
+        stickerEl('뷰파인더', 700, 1150, 330, 250, (c,w,h)=>tViewfinder(c, w, h)),
+        stickerEl('음악 위젯', 760, 170, 340, 240, (c,w,h)=>tMusicWidget(c, w, h), 16)
+      ];
+    },
+    texts(){
+      return [
+        textEl('PM', 402, 872, {fontSize:22, color:'#cfcfcf', bold:false}),
+        textEl('04', 404, 890, {fontSize:110, color:'#ffffff', bold:true}),
+        textEl('25', 562, 890, {fontSize:110, color:'#ffffff', bold:true}),
+        textEl('now playing', 794, 202, {fontSize:34, color:'#ffffff', bold:true}),
+        textEl('my playlist', 794, 252, {fontSize:24, color:'#c9c9c9', bold:false}),
+        textEl('a small stop for something sweet', 60, 720,
+          {fontSize:40, color:'#ffffff', bold:false}),
+        textEl('nothing special, just a quiet\nmoment that somehow felt enough', 60, 1620,
+          {fontSize:40, color:'#ffffff', bold:false})
+      ];
+    }
+  },
+  {
+    id:'flipcarousel', name:'플립 캐러셀', cw:2160, ch:1920,
+    bg(ctx, w, h){ bgNoise(ctx, '#1c1c1e', 'rgba(0,0,0,0.25)', 26, w, h); },
+    slots:[
+      {x:0,    y:0, w:1080, h:1920},                    // 슬라이드 1
+      {x:1080, y:0, w:1080, h:1920},                    // 슬라이드 2
+      {x:940, y:1300, w:280, h:350, rot:-8, border:14}  // 경계를 가로지르는 폴라로이드
+    ],
+    stickers(){
+      return [
+        /* 슬라이드 경계(x=1080)에 걸치는 플립 시계 → 분할 내보내기 시 반쪽씩 이어짐 */
+        stickerEl('플립 시계', 930, 865, 300, 190, (c,w,h)=>tFlipClock(c, w, h), 20),
+        stickerEl('뷰파인더', 1500, 640, 330, 250, (c,w,h)=>tViewfinder(c, w, h))
+      ];
+    },
+    texts(){
+      return [
+        textEl('AM', 942, 872, {fontSize:22, color:'#cfcfcf', bold:false}),
+        textEl('09', 944, 890, {fontSize:110, color:'#ffffff', bold:true}),
+        textEl('15', 1102, 890, {fontSize:110, color:'#ffffff', bold:true}),
+        textEl('just an\nordinary day', 80, 260, {fontSize:44, color:'#ffffff', bold:false}),
+        textEl('but somehow the outfit\nmade it feel a little softer', 1160, 1580,
+          {fontSize:40, color:'#ffffff', bold:false})
+      ];
+    }
+  },
+  {
+    id:'weekly', name:'위클리 리포트',
+    bg(ctx, w, h){ bgNoise(ctx, '#20242a', 'rgba(0,0,0,0.22)', 24, w, h); },
+    slots:[
+      {x:0, y:0, w:1080, h:1920},                       // 풀블리드 배경 사진
+      {x:120, y:780,  w:300, h:400, border:12, rot:-2},
+      {x:760, y:620,  w:260, h:340, border:12, rot:2},
+      {x:90,  y:1230, w:260, h:340, border:12, rot:1},
+      {x:720, y:1080, w:280, h:360, border:12, rot:-2},
+      {x:300, y:1520, w:260, h:320, border:12, rot:2},
+      {x:760, y:1490, w:270, h:330, border:12, rot:-1}
+    ],
+    stickers(){
+      return [
+        stickerEl('타이틀 필', 240, 300, 600, 120, (c,w,h)=>tChatPill(c, w, h), 16),
+        stickerEl('폴더', 475, 470, 130, 115, (c)=>tFolder(c, 130))
+      ];
+    },
+    texts(){
+      const fname = (t,x,y)=>textEl(t, x, y, {fontSize:30, color:'#ffffff', bold:false,
+        strokeColor:'#000000aa', strokeW:3});
+      return [
+        textEl('WEEKLY REPORT 🌟', 330, 330, {fontSize:40, color:'#333333', bold:true}),
+        fname('week 7/52', 450, 610),
+        fname('recommending.jpg', 120, 1205),
+        fname('treating.jpg', 775, 985),
+        fname('eating.jpg', 110, 1595),
+        fname('reading.jpg', 735, 1448),
+        fname('playing.jpg', 315, 1860),
+        fname('obsessing.jpg', 765, 1840)
+      ];
+    }
+  },
+  {
+    id:'palette', name:'컬러 칩',
+    bg(ctx, w, h){ bgNoise(ctx, '#d9d6d0', 'rgba(90,85,75,0.07)', 22, w, h); },
+    slots:[
+      {x:0, y:0, w:1080, h:1920},                 // 풀블리드 배경 사진
+      {x:164, y:334,  w:292, h:292},              // 칩 1 사진 (카드 구멍 뒤)
+      {x:654, y:774,  w:292, h:292},              // 칩 2
+      {x:134, y:1254, w:292, h:292}               // 칩 3
+    ],
+    stickers(){
+      return [
+        stickerEl('컬러 칩 카드', 150, 320,  320, 400, (c,w,h)=>tChip(c, w, h), 24),
+        stickerEl('컬러 칩 카드', 640, 760,  320, 400, (c,w,h)=>tChip(c, w, h), 24),
+        stickerEl('컬러 칩 카드', 120, 1240, 320, 400, (c,w,h)=>tChip(c, w, h), 24)
+      ];
+    },
+    texts(){
+      return [
+        textEl('PALETTE', 170, 648,  {fontSize:30, color:'#111111', bold:true}),
+        textEl('cherry red', 170, 692, {fontSize:26, color:'#555555', bold:false}),
+        textEl('PALETTE', 660, 1088, {fontSize:30, color:'#111111', bold:true}),
+        textEl('clear sky', 660, 1132, {fontSize:26, color:'#555555', bold:false}),
+        textEl('PALETTE', 140, 1568, {fontSize:30, color:'#111111', bold:true}),
+        textEl('sea glass', 140, 1612, {fontSize:26, color:'#555555', bold:false})
+      ];
+    }
+  },
+  {
+    id:'focus', name:'포커스 모드',
+    bg(ctx, w, h){ bgNoise(ctx, '#26282c', 'rgba(0,0,0,0.22)', 24, w, h); },
+    slots:[{x:0, y:0, w:1080, h:1920}],
+    stickers(){
+      return [
+        stickerEl('집중모드 필', 200, 760,  680, 150, (c,w,h)=>tGlassPill(c, w, h, 'moon')),
+        stickerEl('집중모드 필', 200, 960,  680, 150, (c,w,h)=>tGlassPill(c, w, h, 'person')),
+        stickerEl('집중모드 필', 200, 1160, 680, 150, (c,w,h)=>tGlassPill(c, w, h, 'bed'))
+      ];
+    },
+    texts(){
+      return [
+        textEl('Do Not Disturb', 390, 806, {fontSize:44, color:'#ffffff', bold:false}),
+        textEl('Me Time', 455, 1006, {fontSize:44, color:'#ffffff', bold:false}),
+        textEl('Sleep', 480, 1206, {fontSize:44, color:'#ffffff', bold:false})
+      ];
+    }
+  },
+  {
+    id:'recap', name:'리캡 그리드',
+    bg(ctx, w, h){ bgGrid(ctx, w, h); },
+    slots:[
+      {x:360, y:220,  w:360, h:470, rot:0},
+      {x:100, y:830,  w:280, h:370, rot:0},
+      {x:720, y:760,  w:300, h:390, rot:0},
+      {x:700, y:1330, w:300, h:390, rot:0},
+      {x:330, y:1430, w:300, h:400, rot:0}
+    ],
+    stickers(){
+      return [
+        stickerEl('핑크 폴더', 770, 560, 120, 106, (c)=>tFolder(c, 120, '#f9b8d9', '#ef7fbe')),
+        stickerEl('핑크 폴더', 170, 1290, 120, 106, (c)=>tFolder(c, 120, '#f9b8d9', '#ef7fbe'))
+      ];
+    },
+    texts(){
+      const fname = (t,x,y)=>textEl(t, x, y, {fontSize:28, color:'#333333', bold:false});
+      return [
+        textEl('june', 440, 930, {fontSize:104, color:'#111111', bold:true}),
+        textEl('recap', 430, 1060, {font:CURSIVE, fontSize:116, color:'#111111', bold:true}),
+        textEl('(a month filled with\nlittle joys and memories)', 335, 1230,
+          {fontSize:34, color:'#333333', bold:false}),
+        fname('daily', 800, 700),
+        fname('summer', 195, 1430),
+        fname('(1).jpg', 480, 700),
+        fname('(2).jpg', 170, 1212),
+        fname('(3).jpg', 800, 1162),
+        fname('(4).jpg', 780, 1732),
+        fname('(5).jpg', 410, 1842)
+      ];
+    }
+  },
+  {
+    id:'dotpath', name:'점선 무드',
+    bg(ctx, w, h){ bgNoise(ctx, '#fdfdfd', 'rgba(0,0,0,0.02)', 8, w, h); },
+    slots:[
+      {x:0, y:0, w:1080, h:960},                          // 상단 사진
+      {x:80,  y:1030, w:180, h:180, shape:'circle'},
+      {x:840, y:1030, w:180, h:180, shape:'circle'},
+      {x:480, y:1270, w:160, h:160, shape:'circle'},
+      {x:80,  y:1560, w:180, h:180, shape:'circle'},
+      {x:840, y:1590, w:160, h:160, shape:'circle'}
+    ],
+    stickers(){
+      return [ stickerEl('점선 경로', 0, 980, 1080, 940, (c,w,h)=>tDotsPath(c, w, h)) ];
+    },
+    texts(){
+      const par = (t,x,y,dark)=>textEl(t, x, y,
+        {fontSize:44, color:dark?'#141414':'#ffffff', bold:false});
+      return [
+        textEl('life', 380, 560, {font:CURSIVE, fontSize:180, color:'#00000000', bold:true,
+          strokeColor:'#ffffff', strokeW:4}),
+        par('(things)', 90, 300, false),
+        par('(that)', 860, 560, false),
+        par('(made)', 290, 830, false),
+        par('(me)', 640, 1090, true),
+        par('(smile)', 150, 1310, true),
+        par('(in July)', 620, 1620, true)
+      ];
+    }
+  },
+  {
+    id:'clock', name:'시계 콜라주',
+    bg(ctx, w, h){ bgNoise(ctx, '#f4e6c3', 'rgba(140,100,40,0.05)', 14, w, h); },
+    slots:[
+      {x:255, y:400, w:150, h:120},                        // 10시 괄호 사진
+      {x:690, y:400, w:150, h:120},                        // 2시
+      {x:615, y:920, w:150, h:120},                        // 5시
+      {x:0,   y:1250, w:360, h:335},
+      {x:360, y:1250, w:360, h:335},
+      {x:720, y:1250, w:360, h:335},
+      {x:0,   y:1585, w:360, h:335},
+      {x:360, y:1585, w:360, h:335},
+      {x:720, y:1585, w:360, h:335}
+    ],
+    stickers(){
+      return [ stickerEl('시계 바늘', 430, 510, 220, 220, (c,w,h)=>tClockHands(c, w, h)) ];
+    },
+    texts(){
+      const wd = (t,x,y)=>textEl(t, x, y, {fontSize:74, color:'#7a4a1f', bold:true});
+      const pr = (t,x,y)=>textEl(t, x, y, {fontSize:86, color:'#7a4a1f', bold:false});
+      const num = (t,x,y)=>textEl(t, x, y, {fontSize:34, color:'#ffffff', bold:false,
+        strokeColor:'#000000aa', strokeW:3});
+      return [
+        wd('Twelve', 400, 180), wd('Eleven', 215, 300), wd('One', 665, 300),
+        wd('Nine', 110, 540),   wd('Three', 800, 540),
+        wd('Eight', 165, 760),  wd('Four', 735, 760),
+        wd('Seven', 300, 920),  wd('Six', 480, 1060),
+        pr('(', 200, 402), pr(')', 418, 402),
+        pr('(', 635, 402), pr(')', 853, 402),
+        pr('(', 560, 922), pr(')', 778, 922),
+        num('(1)', 16, 1264), num('(2)', 376, 1264), num('(3)', 736, 1264),
+        num('(4)', 16, 1599), num('(5)', 376, 1599), num('(6)', 736, 1599)
+      ];
+    }
+  },
+  {
+    id:'calendar', name:'먼슬리 달력',
+    bg(ctx, w, h){ bgNoise(ctx, '#ffffff', 'rgba(0,0,0,0.02)', 6, w, h); },
+    slots:(function(){
+      const s = [{x:0, y:0, w:1080, h:900}];               // 상단 사진
+      for(let r=0; r<4; r++)
+        for(let c=0; c<7; c++)
+          s.push({x:100+c*130, y:1150+r*130, w:100, h:100, shape:'circle'});
+      return s;
+    })(),
+    stickers(){
+      return [ stickerEl('바인더 링', 0, 845, 1080, 130, (c,w,h)=>tRings(c, w, h)) ];
+    },
+    texts(){
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const out = [ textEl('July 2026', 415, 1010, {fontSize:52, color:'#111111', bold:true}) ];
+      days.forEach((d,c)=>{
+        out.push(textEl(d, 118+c*130, 1092, {fontSize:30, color:'#333333', bold:false}));
+      });
+      return out;
+    }
+  }
+];
+
+function applyTemplate(t){
+  stopPreview();
+  // 목표 비율: 디자인 기준(1080×1920)을 선택한 높이로 균일 축소
+  const designW = t.cw||TW, designH = t.ch||TH;
+  const targetH = +($('#tplRatio').value)||designH;
+  const k = targetH/designH;                       // 균일 축소 계수
+  const offX = Math.round(designW*(1-k)/2);        // 가로 중앙 정렬 오프셋
+  const tw = designW, th = targetH;
+  canvasW = tw; canvasH = th;
+  const preset = tw+'x'+th;
+  const sp = $('#sizePreset');
+  sp.value = preset;
+  if(sp.value !== preset){
+    sp.value = 'custom';
+    $('#customW').value = tw; $('#customH').value = th;
+    $('#customSizeRow').style.display = 'flex';
+  }else{
+    $('#customSizeRow').style.display = 'none';
+  }
+  /* 슬롯 좌표 변환: 풀블리드(가로 1080 정렬) 슬롯은 가로를 유지하고 세로만 줄임
+     (사진은 슬롯 비율로 자동 재크롭되므로 왜곡 없음). 나머지는 균일 축소 + 중앙 정렬 */
+  function mapSlot(s){
+    if(k===1) return s;
+    if(s.w===1080 && s.x%1080===0){
+      return Object.assign({}, s, {y:Math.round(s.y*k), h:Math.round(s.h*k)});
+    }
+    return Object.assign({}, s, {
+      x:Math.round(s.x*k)+offX, y:Math.round(s.y*k),
+      w:Math.round(s.w*k), h:Math.round(s.h*k),
+      border:s.border ? Math.max(6, Math.round(s.border*k)) : 0
+    });
+  }
+  const pg = page();
+  // 이전 템플릿 요소 제거 (사용자 사진/영상/직접 만든 텍스트는 유지)
+  pg.elements = pg.elements.filter(e=>!e.tpl);
+  // 배경 생성 (질감은 1× 해상도)
+  pg.bgImage = makeCanvas(tw, th, (ctx)=>t.bg(ctx, tw, th), 1);
+  pg.bgColor = '#ffffff';
+  // 사진/영상을 슬롯 순서대로 배치, 부족한 슬롯은 자리표시
+  const media = pg.elements.filter(e=>e.type!=='text');
+  t.slots.forEach((s0, i)=>{
+    const s = mapSlot(s0);
+    if(media[i]){
+      fitToSlot(media[i], s);
+    }else{
+      const ph = stickerEl('사진 자리 '+(i+1), s.x, s.y, s.w, s.h,
+        (c,w,h)=>tPlaceholder(c, w, h, i+1));
+      ph.name = '사진 자리 '+(i+1)+' (사진 추가 시 교체)';
+      ph.slot = s;
+      ph.rot = s.rot||0;
+      ph.shape = s.shape||'rect';
+      // 자리표시는 사진과 같은 층(스티커 아래)에 있어야 하므로 미디어 뒤, 스티커 앞에 삽입
+      pg.elements.push(ph);
+    }
+  });
+  // 꾸밈 스티커 → 텍스트 순서로 위에 쌓기 (비율 계수 반영)
+  t.stickers().forEach(e=>{
+    if(k!==1){ e.x = e.x*k + offX; e.y = e.y*k; e.scale = e.scale*k; }
+    pg.elements.push(e);
+  });
+  t.texts().forEach(e=>{
+    if(k!==1){
+      e.x = e.x*k + offX; e.y = e.y*k;
+      e.fontSize = Math.max(10, Math.round(e.fontSize*k));
+      e.pad = Math.round((e.pad||16)*k);
+      if(e.strokeW) e.strokeW = Math.max(1, Math.round(e.strokeW*k));
+    }
+    pg.elements.push(e);
+  });
+  selectedId = null;
+  renderAll();
+  const missing = t.slots.length - Math.min(media.length, t.slots.length);
+  let msg = missing>0
+    ? '템플릿을 적용했습니다. 빈 슬롯 '+missing+'개는 사진을 추가하면 자동으로 채워져요.'
+    : '템플릿을 적용했습니다. 사진 '+t.slots.length+'장이 슬롯에 배치됐어요.';
+  if(tw > 1080) msg += ' 내보낼 때 "캐러셀 분할"을 켜면 1080px 슬라이드로 잘려요.';
+  toast(msg);
+}
+(function initTemplates(){
+  const box = $('#tplBtns');
+  TEMPLATES.forEach(t=>{
+    const b = document.createElement('button');
+    b.textContent = t.name+' · '+t.slots.length+'장';
+    b.addEventListener('click', ()=>applyTemplate(t));
+    box.appendChild(b);
+  });
+  $('#tplClear').addEventListener('click', ()=>{
+    const pg = page();
+    const n = pg.elements.filter(e=>e.tpl).length;
+    pg.elements = pg.elements.filter(e=>!e.tpl);
+    pg.bgImage = null;
+    selectedId = null; renderAll();
+    toast(n ? '템플릿 요소 '+n+'개와 배경을 지웠습니다.' : '지울 템플릿 요소가 없습니다.');
+  });
+})();
+
 /* ---------- 내보내기 ---------- */
-function renderPageToDataURL(pg, s){
+function renderPageToCanvas(pg, s){
   const c = document.createElement('canvas');
   c.width = canvasW*s; c.height = canvasH*s;
   renderScene(c.getContext('2d'), pg, s);
-  return c.toDataURL('image/png');
+  return c;
+}
+/* 넓은 캔버스를 slideW(기본 1080)px 폭 조각으로 세로 분할 */
+function sliceCanvas(full, s, slideW){
+  const sw = slideW*s;
+  const n = Math.max(1, Math.ceil(full.width/sw - 1e-6));
+  if(n<=1) return [full];
+  const out = [];
+  for(let i=0; i<n; i++){
+    const w = Math.min(sw, full.width - i*sw);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = full.height;
+    c.getContext('2d').drawImage(full, i*sw, 0, w, full.height, 0, 0, w, full.height);
+    out.push(c);
+  }
+  return out;
 }
 function dataURLtoFile(dataURL, fname){
   const bin = atob(dataURL.split(',')[1]);
@@ -1051,12 +2200,18 @@ $('#exportBtn').addEventListener('click', ()=>{
   try{
     const s = +$('#exportScale').value;
     const range = $('#exportRange').value;
+    const slideW = +$('#exportSplit').value;
     const targets = range==='all' ? pages : [page()];
     const files = [], urls = [];
     targets.forEach((pg,i)=>{
-      const u = renderPageToDataURL(pg, s);
-      urls.push(u);
-      files.push(dataURLtoFile(u, 'collage_p'+(i+1)+'_'+canvasW*s+'x'+canvasH*s+'.png'));
+      const full = renderPageToCanvas(pg, s);
+      const parts = slideW>0 ? sliceCanvas(full, s, slideW) : [full];
+      parts.forEach((c,j)=>{
+        const u = c.toDataURL('image/png');
+        urls.push(u);
+        const tag = parts.length>1 ? '_s'+(j+1) : '';
+        files.push(dataURLtoFile(u, 'collage_p'+(i+1)+tag+'_'+c.width+'x'+c.height+'.png'));
+      });
     });
     if(navigator.canShare && navigator.canShare({files})){
       navigator.share({files})
