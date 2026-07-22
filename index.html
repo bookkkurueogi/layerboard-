@@ -121,11 +121,12 @@
 </head>
 <body>
 <header>
-  <h1>레이어<span>보드</span> <span class="dim">v20</span></h1>
+  <h1>레이어<span>보드</span> <span class="dim">v21</span></h1>
   <span class="dim" id="canvasDim"></span>
   <div class="spacer"></div>
   <button id="previewBtn">미리 재생</button>
   <button id="exportVidBtn">영상 내보내기</button>
+  <button class="primary" id="exportAllBtn" style="display:none">전체 저장</button>
   <button class="primary" id="exportBtn">PNG 내보내기</button>
 </header>
 
@@ -761,6 +762,10 @@ function renderPageTabs(){
     b.addEventListener('click', ()=>{ stopPreview(); cur=i; selectedId=null; renderAll(); });
     box.appendChild(b);
   });
+  // 여러 장을 만들면 헤더에 한 번에 저장하는 버튼 표시
+  const allBtn = $('#exportAllBtn');
+  allBtn.style.display = pages.length>1 ? '' : 'none';
+  allBtn.textContent = '전체 '+pages.length+'장 저장';
 }
 $('#addPage').addEventListener('click', ()=>{
   pages.splice(cur+1, 0, newPage());
@@ -2196,12 +2201,10 @@ function dataURLtoFile(dataURL, fname){
   for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   return new File([bytes], fname, {type:'image/png'});
 }
-$('#exportBtn').addEventListener('click', ()=>{
+function exportPNG(targets){
   try{
     const s = +$('#exportScale').value;
-    const range = $('#exportRange').value;
     const slideW = +$('#exportSplit').value;
-    const targets = range==='all' ? pages : [page()];
     const files = [], urls = [];
     targets.forEach((pg,i)=>{
       const full = renderPageToCanvas(pg, s);
@@ -2221,7 +2224,12 @@ $('#exportBtn').addEventListener('click', ()=>{
       fallbackExport(urls);
     }
   }catch(e){ toast('내보내기 중 오류: '+e.message+' (배율을 낮춰 다시 시도해 보세요)'); }
+}
+$('#exportBtn').addEventListener('click', ()=>{
+  exportPNG($('#exportRange').value==='all' ? pages : [page()]);
 });
+/* 전체 저장: 페이지가 여러 장일 때 내보내기 범위 설정과 무관하게 모든 페이지를 한 번에 저장 */
+$('#exportAllBtn').addEventListener('click', ()=> exportPNG(pages));
 function fallbackExport(urls){
   urls.forEach((u,i)=>{
     const a = document.createElement('a');
